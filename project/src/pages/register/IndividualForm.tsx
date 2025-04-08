@@ -332,20 +332,6 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
         await addDoc(collection(db, 'proposals'), proposalData);
       }
       
-      // Se não estiver editando, criar uma notificação para administradores e gerentes
-      if (!isEditMode && !id) {
-        await addDoc(collection(db, 'notifications'), {
-          type: 'new_registration',
-          title: 'Novo cadastro de cliente',
-          message: `${sanitizedData.name} acabou de se cadastrar como pessoa física.`,
-          read: false,
-          recipientRoles: ['admin', 'manager'],
-          targetId: registrationId,
-          targetType: 'client',
-          createdAt: serverTimestamp()
-        });
-      }
-      
       setShowSuccessModal(true);
     } catch (error: any) {
       console.error('Erro ao salvar cadastro:', error);

@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Users, Settings, LogOut, LayoutDashboard, Baseline as Pipeline, Sun, Moon, UserCircle, ClipboardList } from 'lucide-react';
+import { FileText, Users, Settings, LogOut, LayoutDashboard, Baseline as Pipeline, UserCircle, ClipboardList } from 'lucide-react';
 import { Logo } from './Logo';
 import NotificationBell from './NotificationBell';
 import MenuNotificationBell from './MenuNotificationBell';
@@ -30,12 +30,19 @@ const NavItem = ({ to, icon: Icon, children, isActive, notificationBadge }: {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark } = useTheme();
   const location = useLocation();
 
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['client', 'manager', 'admin'] },
-    { path: '/clients', icon: UserCircle, label: 'Clientes', roles: ['manager', 'admin'] },
+    { 
+      path: '/clients', 
+      icon: UserCircle, 
+      label: 'Clientes', 
+      roles: ['manager', 'admin'],
+      showNotification: true,
+      notificationType: 'client' as 'proposal' | 'client'
+    },
     { 
       path: '/proposals', 
       icon: FileText, 
@@ -140,14 +147,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <UserCircle className="h-5 w-5" />
             </Link>
-            
-            <button
-              onClick={toggleTheme}
-              className="p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900 rounded-lg transition-colors"
-              aria-label={isDark ? 'Ativar modo claro' : 'Ativar modo escuro'}
-            >
-              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
           </div>
         </header>
         {/* Conteúdo principal com padding-top para compensar o header fixo */}

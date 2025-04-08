@@ -15,12 +15,11 @@ export interface NotificationData {
 export const createNotification = async (notificationData: NotificationData) => {
   try {
     // Verificar se já existe uma notificação similar para evitar duplicação
-    // Usamos uma consulta mais específica para evitar duplicatas
     const existingQuery = query(
       collection(db, 'notifications'),
       where('type', '==', notificationData.type),
       orderBy('createdAt', 'desc'),
-      limit(10)
+      limit(20)
     );
     
     const existingDocs = await getDocs(existingQuery);
@@ -30,7 +29,14 @@ export const createNotification = async (notificationData: NotificationData) => 
       const oneDayAgo = new Date();
       oneDayAgo.setDate(oneDayAgo.getDate() - 1);
       
-      // Procurar por notificações com a mesma mensagem (que contém o nome do cliente)
+      // Extrair palavras importantes da mensagem atual (ignorando palavras comuns)
+      const stopWords = ['de', 'como', 'se', 'o', 'a', 'os', 'as', 'um', 'uma', 'para', 'com', 'em'];
+      const messageWords = notificationData.message
+        .toLowerCase()
+        .split(' ')
+        .filter((word: string) => !stopWords.includes(word) && word.length > 2);
+      
+      // Procurar por notificações com mensagem similar
       const duplicateNotification = existingDocs.docs.find(doc => {
         const data = doc.data();
         const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
@@ -38,31 +44,23 @@ export const createNotification = async (notificationData: NotificationData) => 
         // Verificar se a notificação é recente (últimas 24 horas)
         if (createdAt < oneDayAgo) return false;
         
-        // Comparar o conteúdo da mensagem para detectar duplicatas
-        // Se a mensagem contém o mesmo nome de cliente, consideramos uma duplicata
-        if (data.message && notificationData.message) {
-          // Extrair o nome do cliente da mensagem
-          const messageWords = data.message.split(' ');
-          const newMessageWords = notificationData.message.split(' ');
-          
-          // Se a mensagem contém pelo menos 3 palavras iguais consecutivas, consideramos duplicata
-          for (let i = 0; i < messageWords.length - 2; i++) {
-            for (let j = 0; j < newMessageWords.length - 2; j++) {
-              if (
-                messageWords[i] === newMessageWords[j] &&
-                messageWords[i+1] === newMessageWords[j+1] &&
-                messageWords[i+2] === newMessageWords[j+2] &&
-                messageWords[i] !== 'de' && 
-                messageWords[i] !== 'como' && 
-                messageWords[i] !== 'se'
-              ) {
-                return true;
-              }
-            }
-          }
-        }
+        // Se não tiver mensagem, não é duplicata
+        if (!data.message) return false;
         
-        return false;
+        // Extrair palavras importantes da mensagem existente
+        const existingMessageWords = data.message
+          .toLowerCase()
+          .split(' ')
+          .filter((word: string) => !stopWords.includes(word) && word.length > 2);
+        
+        // Verificar quantas palavras importantes coincidem
+        const matchingWords = messageWords.filter((word: string) => 
+          existingMessageWords.includes(word)
+        );
+        
+        // Se mais de 50% das palavras importantes coincidem, considerar como duplicata
+        const matchPercentage = matchingWords.length / Math.min(messageWords.length, existingMessageWords.length);
+        return matchPercentage > 0.5;
       });
       
       if (duplicateNotification) {
@@ -86,6 +84,9 @@ export const createNotification = async (notificationData: NotificationData) => 
 
 // Monitorar novos registros de clientes
 export const monitorNewRegistrations = (callback: (registrationId: string, registrationType: 'PF' | 'PJ', clientName: string) => void) => {
+  // Manter um registro de clientes já notificados para evitar duplicatas
+  const notifiedClients = new Set<string>();
+  
   // Configurar a consulta para monitorar novos registros
   const q = query(
     collection(db, 'registrations'),
@@ -108,7 +109,21 @@ export const monitorNewRegistrations = (callback: (registrationId: string, regis
         const fiveMinutesAgo = new Date();
         fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5);
         
-        if (createdAt > fiveMinutesAgo) {
+        // Verificar se já notificamos sobre este cliente (usando o nome como identificador)
+        // ou se o cliente tem um documento de identificação (CPF/CNPJ)
+        const clientIdentifier = data.cpf || data.cnpj || clientName.toLowerCase().trim();
+        
+        if (createdAt > fiveMinutesAgo && !notifiedClients.has(clientIdentifier)) {
+          // Marcar este cliente como já notificado
+          notifiedClients.add(clientIdentifier);
+          
+          // Limitar o tamanho do conjunto para evitar vazamento de memória
+          if (notifiedClients.size > 100) {
+            // Remover o cliente mais antigo (primeiro adicionado)
+            const oldestClient = Array.from(notifiedClients)[0];
+            notifiedClients.delete(oldestClient);
+          }
+          
           callback(registrationId, registrationType, clientName);
         }
       }
@@ -118,6 +133,36 @@ export const monitorNewRegistrations = (callback: (registrationId: string, regis
 
 // Criar notificação para novo registro de cliente
 export const notifyNewRegistration = async (registrationId: string, registrationType: 'PF' | 'PJ', clientName: string) => {
+  // Verificar se já existe uma notificação para este cliente nas últimas 24 horas
+  const existingQuery = query(
+    collection(db, 'notifications'),
+    where('type', '==', 'new_registration'),
+    orderBy('createdAt', 'desc'),
+    limit(20)
+  );
+  
+  const existingDocs = await getDocs(existingQuery);
+  
+  // Verificar se já existe uma notificação com o mesmo nome de cliente
+  const oneDayAgo = new Date();
+  oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+  
+  const isDuplicate = existingDocs.docs.some(doc => {
+    const data = doc.data();
+    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+    
+    // Verificar se a notificação é recente (últimas 24 horas)
+    if (createdAt < oneDayAgo) return false;
+    
+    // Verificar se a mensagem contém o nome do cliente
+    return data.message && data.message.includes(clientName);
+  });
+  
+  if (isDuplicate) {
+    console.log(`Já existe uma notificação para o cliente ${clientName}, ignorando duplicata`);
+    return;
+  }
+  
   const type = 'new_registration';
   const title = 'Novo cadastro de cliente';
   const message = `${registrationType === 'PF' ? 'Cliente' : 'Empresa'} ${clientName} acabou de se cadastrar.`;

@@ -68,8 +68,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       // Ordenar localmente por data (mais recentes primeiro)
       notificationsList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       
+      // Remover notificações duplicadas (mesmo cliente)
+      const uniqueNotifications = removeDuplicateClientNotifications(notificationsList);
+      
       // Limitar a quantidade de notificações exibidas
-      const limitedNotifications = notificationsList.slice(0, 50);
+      const limitedNotifications = uniqueNotifications.slice(0, 50);
       
       setNotifications(limitedNotifications);
       setLoading(false);
@@ -80,6 +83,63 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     return () => unsubscribe();
   }, [user]);
+
+  // Função para remover notificações duplicadas do mesmo cliente
+  const removeDuplicateClientNotifications = (notifications: Notification[]): Notification[] => {
+    // Mapa para rastrear clientes já notificados
+    const clientNameMap = new Map<string, Notification>();
+    
+    // Lista de notificações sem duplicatas
+    const uniqueNotifications: Notification[] = [];
+    
+    // Para cada notificação, verificar se é uma duplicata
+    notifications.forEach(notification => {
+      // Se não for uma notificação de novo cadastro, manter sempre
+      if (notification.type !== 'new_registration') {
+        uniqueNotifications.push(notification);
+        return;
+      }
+      
+      // Extrair o nome do cliente da mensagem
+      // Formato típico: "Cliente/Empresa NOME acabou de se cadastrar"
+      const message = notification.message;
+      const clientNameMatch = message.match(/(?:Cliente|Empresa)\s+(.+?)\s+acabou/i);
+      
+      if (!clientNameMatch) {
+        // Se não conseguir extrair o nome, manter a notificação
+        uniqueNotifications.push(notification);
+        return;
+      }
+      
+      const clientName = clientNameMatch[1].trim().toLowerCase();
+      
+      // Verificar se já temos uma notificação para este cliente
+      if (!clientNameMap.has(clientName)) {
+        // Se não temos, adicionar esta notificação
+        clientNameMap.set(clientName, notification);
+        uniqueNotifications.push(notification);
+      } else {
+        // Se já temos, verificar qual é mais recente
+        const existingNotification = clientNameMap.get(clientName)!;
+        
+        // Se a notificação atual é mais recente, substituir a existente
+        if (notification.createdAt > existingNotification.createdAt) {
+          // Remover a notificação antiga
+          const index = uniqueNotifications.findIndex(n => n.id === existingNotification.id);
+          if (index !== -1) {
+            uniqueNotifications.splice(index, 1);
+          }
+          
+          // Adicionar a nova notificação
+          clientNameMap.set(clientName, notification);
+          uniqueNotifications.push(notification);
+        }
+      }
+    });
+    
+    // Reordenar por data (mais recentes primeiro)
+    return uniqueNotifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  };
 
   // Marcar uma notificação como lida
   const markAsRead = async (id: string) => {
