@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { MoreHorizontal, Eye, Pencil } from 'lucide-react';
+import { MoreHorizontal, Eye, Pencil, X, Search } from 'lucide-react';
 
 interface Proposal {
   id: string;
@@ -16,11 +16,14 @@ interface Proposal {
   hasProperty: boolean;
   propertyValue: number;
   status: 'pending' | 'approved' | 'rejected' | 'in_analysis';
-  pipelineStatus: 'submitted' | 'pre_analysis' | 'credit' | 'legal' | 'contract';
+  pipelineStatus: 'submitted' | 'pre_analysis' | 'credit' | 'legal' | 'contract' | 'closed' | 'lost';
   createdAt: Date;
   userId: string;
   creditLine?: string;
   creditReason?: string;
+  bankId?: string;
+  bankName?: string;
+  bankCommission?: string;
   observationsTimeline?: {
     id: string;
     text: string;
@@ -36,51 +39,152 @@ const pipelineStatusLabels = {
   credit: 'Crédito',
   legal: 'Jurídico/Imóvel',
   contract: 'Em Contrato',
+  closed: 'Negócio Fechado',
+  lost: 'Perdido',
 };
 
 const pipelineStatusColors = {
-  submitted: 'bg-blue-400/10 border-blue-400',
-  pre_analysis: 'bg-yellow-400/10 border-yellow-400',
-  credit: 'bg-green-400/10 border-green-400',
-  legal: 'bg-purple-400/10 border-purple-400',
-  contract: 'bg-orange-400/10 border-orange-400',
+  submitted: 'bg-blue-600 border-blue-600',
+  pre_analysis: 'bg-indigo-600 border-indigo-600',
+  credit: 'bg-teal-600 border-teal-600',
+  legal: 'bg-purple-600 border-purple-600',
+  contract: 'bg-orange-600 border-orange-600',
+  closed: 'bg-emerald-600 border-emerald-600',
+  lost: 'bg-red-600 border-red-600',
 };
 
-const pipelineStatusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
+const pipelineStatusHeaderColors = {
+  submitted: 'bg-blue-600 text-white',
+  pre_analysis: 'bg-indigo-600 text-white',
+  credit: 'bg-teal-600 text-white',
+  legal: 'bg-purple-600 text-white',
+  contract: 'bg-orange-600 text-white',
+  closed: 'bg-emerald-600 text-white',
+  lost: 'bg-red-600 text-white',
+};
+
+const pipelineStatusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract', 'closed', 'lost'];
 
 export default function Pipeline() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [filteredProposals, setFilteredProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedProposal, setDraggedProposal] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState<string | null>(null);
   const [showObservationsModal, setShowObservationsModal] = useState(false);
   const [selectedObservations, setSelectedObservations] = useState<Proposal['observationsTimeline']>([]);
   const [selectedProposalNumber, setSelectedProposalNumber] = useState('');
-  
+
+  // Filtros
+  const [searchFilter, setSearchFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | Proposal['pipelineStatus']>('all');
+  const [bankFilter, setbankFilter] = useState<string>('all');
+  const [banksList, setBanksList] = useState<{id: string, name: string}[]>([]);
+
   const navigate = useNavigate();
   const { user } = useAuth();
 
   useEffect(() => {
     fetchProposals();
+    fetchBanks();
   }, [user]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [proposals, searchFilter, statusFilter, bankFilter]);
+
+  const fetchBanks = async () => {
+    try {
+      const banksSnapshot = await getDocs(collection(db, 'banks'));
+      const banksData = banksSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().tradingName || doc.data().companyName || 'Banco sem nome'
+      }));
+      setBanksList(banksData);
+    } catch (error) {
+      console.error('Erro ao buscar bancos:', error);
+    }
+  };
+
+  const applyFilters = () => {
+    let result = [...proposals];
+    
+    // Filtro por texto (nome do cliente ou número da proposta)
+    if (searchFilter) {
+      result = result.filter(proposal => {
+        const lowerSearch = searchFilter.toLowerCase();
+        return (
+          proposal.clientName?.toLowerCase().includes(lowerSearch) ||
+          proposal.proposalNumber?.toLowerCase().includes(lowerSearch)
+        );
+      });
+    }
+    
+    // Filtro por status
+    if (statusFilter !== 'all') {
+      result = result.filter(proposal => proposal.pipelineStatus === statusFilter);
+    }
+    
+    // Filtro por banco
+    if (bankFilter !== 'all') {
+      result = result.filter(proposal => proposal.bankId === bankFilter);
+    }
+    
+    setFilteredProposals(result);
+  };
+
+  const resetFilters = () => {
+    setSearchFilter('');
+    setStatusFilter('all');
+    setbankFilter('all');
+  };
 
   const fetchProposals = async () => {
     try {
       setLoading(true);
       let q;
-      
-      // Se o usuário for cliente, mostrar apenas suas propostas
+
       if (user?.role === 'client') {
         q = query(collection(db, 'proposals'), where('userId', '==', user.id));
       } else {
-        // Se for gerente ou admin, mostrar todas as propostas
         q = query(collection(db, 'proposals'));
       }
-      
+
       const querySnapshot = await getDocs(q);
-      
+
+      // Buscar todos os bancos para mapear IDs para nomes
+      const banksSnapshot = await getDocs(collection(db, 'banks'));
+      const banksMap = new Map();
+      banksSnapshot.docs.forEach(doc => {
+        const bankData = doc.data();
+        // Preferir o Nome Fantasia, mas usar a Razão Social como fallback
+        banksMap.set(doc.id, bankData.tradingName || bankData.companyName || 'Banco sem nome');
+      });
+
+      console.log('Mapa de bancos carregado:', Array.from(banksMap.entries()));
+
       const proposalsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
+        // Verificar se o clientId existe e não está vazio
+        if (!data.clientId || data.clientId.trim() === '') {
+          console.error(`Proposta ${doc.id} com clientId inválido:`, data.clientId);
+        }
+
+        // Obter o nome do banco se o bankId existir
+        let bankName = '';
+        if (data.bankId && banksMap.has(data.bankId)) {
+          bankName = banksMap.get(data.bankId);
+        }
+
+        console.log('Proposta completa:', {
+          id: doc.id,
+          ...data,
+          clientId: data.clientId || '',
+          clientName: data.clientName || 'Nome não disponível',
+          bankId: data.bankId || '',
+          bankName: bankName
+        });
+
         return {
           id: doc.id,
           proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
@@ -95,11 +199,15 @@ export default function Pipeline() {
           userId: data.userId || '',
           creditLine: data.creditLine || '',
           creditReason: data.creditReason || '',
+          bankId: data.bankId || '',
+          bankName: bankName,
+          bankCommission: data.bankCommission || '',
           observationsTimeline: data.observationsTimeline || [],
         };
       }) as Proposal[];
 
       setProposals(proposalsData);
+      setFilteredProposals(proposalsData);
     } catch (error) {
       console.error('Erro ao buscar propostas:', error);
     } finally {
@@ -117,32 +225,48 @@ export default function Pipeline() {
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>, targetStatus: Proposal['pipelineStatus']) => {
     e.preventDefault();
-    
+
     if (!draggedProposal) return;
-    
+
+    const proposal = proposals.find(p => p.id === draggedProposal);
+    if (!proposal) return;
+
+    if (proposal.pipelineStatus === targetStatus) {
+      setDraggedProposal(null);
+      return;
+    }
+
     try {
-      // Encontrar a proposta que está sendo arrastada
-      const proposalToUpdate = proposals.find(p => p.id === draggedProposal);
-      
-      if (!proposalToUpdate) return;
-      
-      // Atualizar a proposta no Firestore
       const proposalRef = doc(db, 'proposals', draggedProposal);
+
+      const newObservation = {
+        id: `obs_${Date.now()}`,
+        text: `Proposta movida para ${pipelineStatusLabels[targetStatus]}${targetStatus === 'lost' ? ' (Negócio perdido)' : targetStatus === 'closed' ? ' (Negócio fechado com sucesso)' : ''}`,
+        createdAt: new Date(),
+        createdBy: user?.id || 'sistema',
+        createdByName: user?.name || user?.email || 'Sistema',
+      };
+
       await updateDoc(proposalRef, {
         pipelineStatus: targetStatus,
+        observationsTimeline: [...(proposal.observationsTimeline || []), newObservation],
       });
-      
-      // Atualizar o estado local
-      setProposals(proposals.map(p => 
-        p.id === draggedProposal 
-          ? { ...p, pipelineStatus: targetStatus } 
-          : p
-      ));
-      
-      // Limpar o estado de arrastar
-      setDraggedProposal(null);
+
+      setProposals(prevProposals =>
+        prevProposals.map(p =>
+          p.id === draggedProposal
+            ? {
+                ...p,
+                pipelineStatus: targetStatus,
+                observationsTimeline: [...(p.observationsTimeline || []), newObservation],
+              }
+            : p
+        )
+      );
     } catch (error) {
       console.error('Erro ao atualizar status da proposta:', error);
+    } finally {
+      setDraggedProposal(null);
     }
   };
 
@@ -154,189 +278,281 @@ export default function Pipeline() {
   };
 
   const getProposalsByStatus = (status: Proposal['pipelineStatus']) => {
-    return proposals.filter(proposal => proposal.pipelineStatus === status);
+    return filteredProposals.filter(proposal => proposal.pipelineStatus === status);
   };
 
   return (
     <div className="dark-card rounded-lg p-6">
       <h2 className="text-2xl font-semibold text-white mb-6">Pipeline</h2>
-      
+
+      {/* Filtros */}
+      <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4 mb-6">
+        <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Filtro por texto */}
+          <div>
+            <label htmlFor="searchFilter" className="block text-sm font-medium text-white mb-1">
+              Nome do Cliente
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                id="searchFilter"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Buscar por cliente ou número..."
+              />
+              <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+            </div>
+          </div>
+          
+          {/* Filtro por status */}
+          <div>
+            <label htmlFor="statusFilter" className="block text-sm font-medium text-white mb-1">
+              Status da Proposta
+            </label>
+            <select
+              id="statusFilter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">Todos</option>
+              {pipelineStatusOrder.map(status => (
+                <option key={status} value={status}>
+                  {pipelineStatusLabels[status as keyof typeof pipelineStatusLabels]}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Filtro por banco */}
+          <div>
+            <label htmlFor="bankFilter" className="block text-sm font-medium text-white mb-1">
+              Banco
+            </label>
+            <select
+              id="bankFilter"
+              value={bankFilter}
+              onChange={(e) => setbankFilter(e.target.value)}
+              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">Todos</option>
+              {banksList.map(bank => (
+                <option key={bank.id} value={bank.id}>
+                  {bank.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        {/* Botão para limpar filtros */}
+        {(searchFilter || statusFilter !== 'all' || bankFilter !== 'all') && (
+          <button
+            onClick={resetFilters}
+            className="flex items-center text-sm text-white hover:text-blue-300"
+          >
+            <X className="h-4 w-4 mr-1" />
+            Limpar filtros
+          </button>
+        )}
+      </div>
+
       {loading ? (
         <div className="flex justify-center items-center py-16">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          {pipelineStatusOrder.map((status) => (
-            <div 
-              key={status}
-              className="flex flex-col h-full"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-md font-medium text-white">
-                  {pipelineStatusLabels[status as keyof typeof pipelineStatusLabels]}
-                </h3>
-                <span className="text-xs text-white bg-gray-800 rounded-full px-2 py-0.5">
-                  {getProposalsByStatus(status as Proposal['pipelineStatus']).length}
-                </span>
-              </div>
-              
+        <div className="overflow-x-auto pb-4">
+          <div className="grid grid-flow-col auto-cols-[280px] gap-4 min-w-full">
+            {pipelineStatusOrder.map((status) => (
               <div 
-                className={`flex-1 bg-gray-900 rounded-lg p-3 min-h-[500px] overflow-y-auto ${
-                  draggedProposal ? 'border-2 border-dashed' : 'border border-gray-700'
-                }`}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, status as Proposal['pipelineStatus'])}
+                key={status}
+                className="flex flex-col h-full"
               >
-                {getProposalsByStatus(status as Proposal['pipelineStatus']).length > 0 ? (
-                  <div className="space-y-3">
-                    {getProposalsByStatus(status as Proposal['pipelineStatus']).map((proposal) => (
-                      <div 
-                        key={proposal.id}
-                        className={`bg-black rounded-lg p-3 cursor-move shadow-md border ${
-                          pipelineStatusColors[proposal.pipelineStatus]
-                        }`}
-                        draggable
-                        onDragStart={() => handleDragStart(proposal.id)}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs text-white font-medium">
-                            {proposal.proposalNumber}
-                          </span>
-                          <div className="relative">
-                            <button
-                              onClick={() => setShowDropdown(showDropdown === proposal.id ? null : proposal.id)}
-                              className="p-1 rounded-full hover:bg-gray-700"
-                            >
-                              <MoreHorizontal className="h-4 w-4 text-gray-300" />
-                            </button>
+                <div className={`rounded-t-lg px-3 py-3 flex items-center justify-between ${pipelineStatusHeaderColors[status as keyof typeof pipelineStatusHeaderColors]}`}>
+                  <h3 className="text-md font-medium">
+                    {pipelineStatusLabels[status as keyof typeof pipelineStatusLabels]}
+                  </h3>
+                  <span className="text-xs bg-black/30 rounded-full px-2 py-1">
+                    {getProposalsByStatus(status as Proposal['pipelineStatus']).length}
+                  </span>
+                </div>
+
+                <div 
+                  className={`flex-1 bg-gray-800 rounded-b-lg p-3 min-h-[500px] max-h-[70vh] overflow-y-auto border-x border-b ${
+                    draggedProposal ? 'border-2 border-dashed' : 'border-gray-700'
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, status as Proposal['pipelineStatus'])}
+                >
+                  {getProposalsByStatus(status as Proposal['pipelineStatus']).length > 0 ? (
+                    <div className="space-y-3">
+                      {getProposalsByStatus(status as Proposal['pipelineStatus']).map((proposal) => (
+                        <div 
+                          key={proposal.id}
+                          className={`bg-gray-900 rounded-lg shadow-md overflow-hidden cursor-move border-l-4 ${
+                            pipelineStatusColors[proposal.pipelineStatus].split(' ')[1]
+                          }`}
+                          draggable
+                          onDragStart={() => handleDragStart(proposal.id)}
+                        >
+                          <div className="p-3">
+                            <div className="flex justify-between items-start mb-3">
+                              <span className="text-xs font-medium px-2 py-1 rounded bg-black/30 text-white">
+                                {proposal.proposalNumber}
+                              </span>
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowDropdown(showDropdown === proposal.id ? null : proposal.id)}
+                                  className="p-1 rounded-full hover:bg-gray-700"
+                                >
+                                  <MoreHorizontal className="h-4 w-4 text-gray-300" />
+                                </button>
+
+                                {showDropdown === proposal.id && (
+                                  <div className="absolute right-0 mt-1 w-36 bg-black rounded-md shadow-lg z-10 border border-gray-700">
+                                    <div className="py-1">
+                                      <button
+                                        onClick={() => {
+                                          navigate(`/proposals/detail/${proposal.id}`);
+                                          setShowDropdown(null);
+                                        }}
+                                        className="flex items-center w-full px-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-gray-700/70 transition-all"
+                                      >
+                                        <Eye className="h-4 w-4 mr-2" />
+                                        Ver Proposta
+                                      </button>
+
+                                      <button
+                                        onClick={() => {
+                                          navigate(`/proposals/edit/${proposal.id}`);
+                                          setShowDropdown(null);
+                                        }}
+                                        className="flex items-center w-full px-4 py-2 text-sm text-yellow-400 hover:text-yellow-300 hover:bg-gray-700/70 transition-all"
+                                      >
+                                        <Pencil className="h-4 w-4 mr-2" />
+                                        Editar
+                                      </button>
+
+                                      <button
+                                        onClick={() => {
+                                          setSelectedObservations(proposal.observationsTimeline || []);
+                                          setSelectedProposalNumber(proposal.proposalNumber);
+                                          setShowObservationsModal(true);
+                                          setShowDropdown(null);
+                                        }}
+                                        className="flex items-center w-full px-4 py-2 text-sm text-purple-400 hover:text-purple-300 hover:bg-gray-700/70 transition-all"
+                                      >
+                                        <Eye className="h-4 w-4 mr-2" />
+                                        Observações
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                             
-                            {showDropdown === proposal.id && (
-                              <div className="absolute right-0 mt-1 w-36 bg-black rounded-md shadow-lg z-10 border border-gray-700">
-                                <div className="py-1">
-                                  <button
-                                    onClick={() => {
-                                      navigate(`/proposals/detail/${proposal.id}`);
-                                      setShowDropdown(null);
-                                    }}
-                                    className="flex items-center w-full px-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-gray-700/70 transition-all"
-                                  >
-                                    <Eye className="h-4 w-4 mr-2" />
-                                    Ver Proposta
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      navigate(`/proposals/edit/${proposal.id}`);
-                                      setShowDropdown(null);
-                                    }}
-                                    className="flex items-center w-full px-4 py-2 text-sm text-amber-400 hover:text-amber-300 hover:bg-gray-700/70 transition-all"
-                                  >
-                                    <Pencil className="h-4 w-4 mr-2" />
-                                    Editar
-                                  </button>
+                            <h4 className="font-semibold text-white mb-2">
+                              <button 
+                                onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
+                                className="hover:text-blue-400 transition-colors text-left"
+                              >
+                                {proposal.clientName}
+                              </button>
+                            </h4>
+                            
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Data:</span>
+                                <span className="text-white">
+                                  {(() => {
+                                    try {
+                                      if (proposal.createdAt && typeof proposal.createdAt === 'object' && 'toDate' in proposal.createdAt) {
+                                        const date = proposal.createdAt.toDate();
+                                        return format(date, 'dd/MM/yyyy', { locale: ptBR });
+                                      }
+                                      return 'Data não disponível';
+                                    } catch (error) {
+                                      console.error('Erro ao formatar data:', error);
+                                      return 'Data não disponível';
+                                    }
+                                  })()}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">Crédito:</span>
+                                <span className="text-white">{formatCurrency(proposal.desiredCredit)}</span>
+                              </div>
+                              {proposal.bankName && (
+                                <div className="flex justify-between">
+                                  <span className="text-gray-400">Banco:</span>
+                                  <span className="text-white">{proposal.bankName}</span>
                                 </div>
+                              )}
+                            </div>
+                            
+                            {proposal.observationsTimeline && proposal.observationsTimeline.length > 0 && (
+                              <div className="mt-3 pt-2 border-t border-gray-700">
+                                <button
+                                  onClick={() => {
+                                    setSelectedObservations(proposal.observationsTimeline || []);
+                                    setSelectedProposalNumber(proposal.proposalNumber);
+                                    setShowObservationsModal(true);
+                                  }}
+                                  className="text-xs text-purple-400 hover:text-purple-300"
+                                >
+                                  {proposal.observationsTimeline.length} observação(ões)
+                                </button>
                               </div>
                             )}
                           </div>
                         </div>
-                        
-                        <h4 className="text-sm font-medium text-white mb-2">
-                          <a 
-                            href={`/clients/detail/${proposal.clientId}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/clients/detail/${proposal.clientId}`);
-                            }}
-                            className="hover:underline hover:text-blue-300"
-                          >
-                            {proposal.clientName}
-                          </a>
-                        </h4>
-                        
-                        <div className="space-y-1">
-                          <p className="text-xs text-white">
-                            Data: {format(proposal.createdAt, 'dd/MM/yyyy', { locale: ptBR })}
-                          </p>
-                          {proposal.creditLine && (
-                            <p className="text-xs text-white">
-                              Linha: {proposal.creditLine}
-                            </p>
-                          )}
-                          {proposal.creditReason && (
-                            <p className="text-xs text-white">
-                              Motivo: {proposal.creditReason}
-                            </p>
-                          )}
-                          <p className="text-xs text-white">
-                            Crédito: {formatCurrency(proposal.desiredCredit)}
-                          </p>
-                          {proposal.observationsTimeline && proposal.observationsTimeline.length > 0 && (
-                            <div 
-                              className="mt-1 flex items-center text-xs text-blue-400 cursor-pointer hover:text-blue-300 hover:drop-shadow-[0_0_4px_rgba(96,165,250,0.6)] transition-all"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedObservations(proposal.observationsTimeline || []);
-                                setSelectedProposalNumber(proposal.proposalNumber);
-                                setShowObservationsModal(true);
-                              }}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                              </svg>
-                              {proposal.observationsTimeline.length} observação(ões)
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-sm text-white">Nenhuma proposta</p>
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-gray-500 text-sm">Nenhuma proposta</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
       
       {/* Modal de Observações */}
       {showObservationsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-black border border-gray-700 rounded-lg p-6 max-w-md w-full">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-white">Observações - {selectedProposalNumber}</h3>
-              <button 
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+              <h3 className="text-lg font-medium text-white">
+                Observações - {selectedProposalNumber}
+              </h3>
+              <button
                 onClick={() => setShowObservationsModal(false)}
-                className="text-gray-300 hover:text-white"
+                className="text-gray-400 hover:text-white transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
+                <X className="h-5 w-5" />
               </button>
             </div>
-            
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+
+            <div className="p-4 overflow-y-auto flex-1">
               {selectedObservations && selectedObservations.length > 0 ? (
-                selectedObservations.map((observation, index) => (
-                  <div key={observation.id} className="relative pl-6 pb-4">
-                    {/* Linha vertical da timeline */}
-                    {index < selectedObservations.length - 1 && (
-                      <div className="absolute left-2 top-3 bottom-0 w-0.5 bg-gray-700"></div>
-                    )}
-                    
-                    {/* Círculo da timeline */}
-                    <div className="absolute left-0 top-2 h-4 w-4 rounded-full bg-blue-500"></div>
-                    
-                    <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2">
-                        <span className="text-sm font-medium text-white">{observation.createdByName}</span>
-                        <span className="text-xs text-white">
+                <div className="space-y-4">
+                  {selectedObservations.map((observation) => (
+                    <div key={observation.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                      <p className="text-sm text-white mb-2">{observation.text}</p>
+                      <div className="flex justify-between items-center text-xs text-gray-400">
+                        <span>{observation.createdByName}</span>
+                        <span>
                           {(() => {
                             try {
-                              // Usar type assertion para informar ao TypeScript que o objeto tem o método toDate()
+                              // Verificar se é um objeto com método toDate()
                               if (observation.createdAt && typeof observation.createdAt === 'object' && 'toDate' in observation.createdAt) {
                                 const firestoreTimestamp = observation.createdAt as { toDate(): Date };
                                 return format(firestoreTimestamp.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
@@ -362,19 +578,18 @@ export default function Pipeline() {
                           })()}
                         </span>
                       </div>
-                      <p className="text-sm text-white whitespace-pre-wrap">{observation.text}</p>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
-                <p className="text-sm text-white">Nenhuma observação registrada.</p>
+                <p className="text-center text-gray-400">Nenhuma observação encontrada.</p>
               )}
             </div>
-            
-            <div className="mt-4 flex justify-end">
+
+            <div className="p-4 border-t border-gray-700">
               <button
                 onClick={() => setShowObservationsModal(false)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors"
               >
                 Fechar
               </button>
