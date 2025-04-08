@@ -36,7 +36,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['client', 'manager', 'admin'] },
     { path: '/clients', icon: UserCircle, label: 'Clientes', roles: ['manager', 'admin'] },
-    { path: '/proposals', icon: FileText, label: 'Propostas', roles: ['client', 'manager', 'admin'] },
+    { 
+      path: '/proposals', 
+      icon: FileText, 
+      label: 'Propostas', 
+      roles: ['client', 'manager', 'admin'],
+      showNotification: true,
+      notificationType: 'proposal' as 'proposal' | 'client'
+    },
     { path: '/pipeline', icon: Pipeline, label: 'Pipeline', roles: ['manager', 'admin'] },
     { path: '/users', icon: Users, label: 'Usuários', roles: ['admin'] },
     { path: '/settings', icon: Settings, label: 'Configurações', roles: ['admin'] },
@@ -60,8 +67,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.path}
                 to={item.path}
                 icon={item.icon}
-                isActive={location.pathname === item.path}
-                notificationBadge={item.path === '/proposals' ? <MenuNotificationBell filterType="proposal" /> : undefined}
+                isActive={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
+                notificationBadge={item.showNotification ? <MenuNotificationBell filterType={item.notificationType} /> : undefined}
               >
                 {item.label}
               </NavItem>

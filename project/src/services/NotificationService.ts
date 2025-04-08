@@ -15,28 +15,59 @@ export interface NotificationData {
 export const createNotification = async (notificationData: NotificationData) => {
   try {
     // Verificar se já existe uma notificação similar para evitar duplicação
-    if (notificationData.targetId) {
-      const existingQuery = query(
-        collection(db, 'notifications'),
-        where('targetId', '==', notificationData.targetId),
-        where('type', '==', notificationData.type),
-        orderBy('createdAt', 'desc'),
-        limit(1)
-      );
+    // Usamos uma consulta mais específica para evitar duplicatas
+    const existingQuery = query(
+      collection(db, 'notifications'),
+      where('type', '==', notificationData.type),
+      orderBy('createdAt', 'desc'),
+      limit(10)
+    );
+    
+    const existingDocs = await getDocs(existingQuery);
+    
+    // Verificar se existe uma notificação com mensagem similar nas últimas 24 horas
+    if (!existingDocs.empty) {
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
       
-      const existingDocs = await getDocs(existingQuery);
-      
-      // Se já existir uma notificação para este alvo nas últimas 24 horas, não criar outra
-      if (!existingDocs.empty) {
-        const lastNotification = existingDocs.docs[0].data();
-        const lastCreatedAt = lastNotification.createdAt?.toDate ? lastNotification.createdAt.toDate() : new Date(lastNotification.createdAt);
-        const oneDayAgo = new Date();
-        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+      // Procurar por notificações com a mesma mensagem (que contém o nome do cliente)
+      const duplicateNotification = existingDocs.docs.find(doc => {
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
         
-        if (lastCreatedAt > oneDayAgo) {
-          console.log('Notificação similar já existe, ignorando duplicata');
-          return existingDocs.docs[0].id;
+        // Verificar se a notificação é recente (últimas 24 horas)
+        if (createdAt < oneDayAgo) return false;
+        
+        // Comparar o conteúdo da mensagem para detectar duplicatas
+        // Se a mensagem contém o mesmo nome de cliente, consideramos uma duplicata
+        if (data.message && notificationData.message) {
+          // Extrair o nome do cliente da mensagem
+          const messageWords = data.message.split(' ');
+          const newMessageWords = notificationData.message.split(' ');
+          
+          // Se a mensagem contém pelo menos 3 palavras iguais consecutivas, consideramos duplicata
+          for (let i = 0; i < messageWords.length - 2; i++) {
+            for (let j = 0; j < newMessageWords.length - 2; j++) {
+              if (
+                messageWords[i] === newMessageWords[j] &&
+                messageWords[i+1] === newMessageWords[j+1] &&
+                messageWords[i+2] === newMessageWords[j+2] &&
+                messageWords[i] !== 'de' && 
+                messageWords[i] !== 'como' && 
+                messageWords[i] !== 'se'
+              ) {
+                return true;
+              }
+            }
+          }
         }
+        
+        return false;
+      });
+      
+      if (duplicateNotification) {
+        console.log('Notificação similar já existe, ignorando duplicata');
+        return duplicateNotification.id;
       }
     }
     
