@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { ArrowLeft, Building2, User, FileText } from 'lucide-react';
+import { ArrowLeft, Building2, User, FileText, MessageSquarePlus } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Registration {
   id: string;
@@ -37,6 +38,13 @@ interface Registration {
     createdAt: Date;
     resolved?: boolean;
     resolvedAt?: Date;
+  }>;
+  observationsTimeline?: Array<{
+    id: string;
+    text: string;
+    createdAt: Date | string;
+    createdBy: string;
+    createdByName: string;
   }>;
 }
 
@@ -82,23 +90,42 @@ const documentLabels: Record<string, string> = {
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [documentViewUrl, setDocumentViewUrl] = useState<string | null>(null);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [showObservationModal, setShowObservationModal] = useState(false);
+  const [observationText, setObservationText] = useState('');
 
   useEffect(() => {
     const fetchRegistration = async () => {
-      if (!id) return;
+      if (!id) {
+        console.error('ID do cliente não encontrado nos parâmetros da URL');
+        setError('ID do cliente não encontrado');
+        setLoading(false);
+        return;
+      }
 
       try {
         setLoading(true);
+        console.log('Buscando cliente com ID:', id);
         const docRef = doc(db, 'registrations', id);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
           const data = docSnap.data();
+          console.log('Dados do cliente encontrados:', data);
+          
+          // Tratamento seguro para o timeline de observações
+          const safeObservationsTimeline = Array.isArray(data.observationsTimeline) 
+            ? data.observationsTimeline.map((obs: any) => ({
+                ...obs,
+                createdAt: obs.createdAt?.toDate ? obs.createdAt.toDate() : new Date(obs.createdAt)
+              }))
+            : [];
+          
           setRegistration({
             id: docSnap.id,
             ...data,
@@ -108,8 +135,10 @@ export default function ClientDetail() {
               createdAt: p.createdAt?.toDate() || new Date(),
               resolvedAt: p.resolvedAt?.toDate() || undefined,
             })) : [],
+            observationsTimeline: safeObservationsTimeline,
           } as Registration);
         } else {
+          console.error('Cliente não encontrado no Firestore para o ID:', id);
           setError('Cadastro não encontrado');
         }
       } catch (error) {
@@ -126,10 +155,21 @@ export default function ClientDetail() {
   const handleEditClick = () => {
     if (!registration) return;
     
-    const path = registration.type === 'PF' 
-      ? `/register/individual/${registration.id}` 
-      : `/register/company/${registration.id}`;
+    // Verificar o tipo de cliente e redirecionar para o formulário correto
+    const clientType = registration.type;
+    console.log('Tipo de cliente detectado:', clientType);
     
+    let path;
+    if (clientType === 'PF') {
+      path = `/register/individual/${registration.id}`;
+    } else if (clientType === 'PJ') {
+      path = `/register/company/${registration.id}`;
+    } else {
+      console.error('Tipo de cliente desconhecido:', clientType);
+      return;
+    }
+    
+    console.log('Redirecionando para:', path);
     navigate(path);
   };
 
@@ -141,6 +181,55 @@ export default function ClientDetail() {
   const handleCloseDocumentModal = () => {
     setShowDocumentModal(false);
     setDocumentViewUrl(null);
+  };
+
+  const handleAddObservation = () => {
+    setShowObservationModal(true);
+  };
+  
+  const handleSaveObservation = async () => {
+    if (!id || !observationText.trim()) return;
+
+    try {
+      const registrationRef = doc(db, 'registrations', id);
+      const registrationDoc = await getDoc(registrationRef);
+      
+      if (!registrationDoc.exists()) {
+        console.error('Cliente não encontrado');
+        return;
+      }
+
+      const registrationData = registrationDoc.data();
+      const observationsTimeline = registrationData.observationsTimeline || [];
+      
+      // Gerar um ID único usando timestamp e um número aleatório
+      const uniqueId = `obs_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+      
+      const newObservation = {
+        id: uniqueId,
+        text: observationText.trim(),
+        createdAt: new Date(),
+        createdBy: user?.id || 'unknown',
+        createdByName: user?.name || 'Usuário',
+      };
+      
+      await updateDoc(registrationRef, {
+        observationsTimeline: [...observationsTimeline, newObservation],
+      });
+      
+      // Atualizar o registro local
+      const updatedRegistration = {
+        ...registration!,
+        observationsTimeline: [...(registration?.observationsTimeline || []), newObservation],
+      };
+      setRegistration(updatedRegistration);
+      
+      // Fechar o modal
+      setShowObservationModal(false);
+      setObservationText('');
+    } catch (error) {
+      console.error('Erro ao adicionar observação:', error);
+    }
   };
 
   if (loading) {
@@ -386,7 +475,7 @@ export default function ClientDetail() {
                     <p className="text-sm text-gray-400">
                       {format(pendency.createdAt, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 ${
                       pendency.resolved 
                         ? 'text-green-400 bg-green-400/10' 
                         : 'text-red-400 bg-red-400/10'
@@ -407,6 +496,73 @@ export default function ClientDetail() {
           </div>
         ) : (
           <p className="text-gray-400">Nenhuma pendência registrada</p>
+        )}
+      </div>
+      
+      {/* Timeline de Observações */}
+      <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-semibold text-white">Observações</h3>
+          <button
+            onClick={handleAddObservation}
+            className="flex items-center text-sm text-blue-400 hover:text-blue-300"
+          >
+            <MessageSquarePlus className="h-4 w-4 mr-1" />
+            Nova Observação
+          </button>
+        </div>
+        
+        {registration.observationsTimeline && registration.observationsTimeline.length > 0 ? (
+          <div className="space-y-4">
+            {registration.observationsTimeline.map((observation, index) => (
+              <div key={observation.id} className="relative pl-6 pb-4">
+                {/* Linha vertical da timeline */}
+                {index < registration.observationsTimeline!.length - 1 && (
+                  <div className="absolute left-2 top-3 bottom-0 w-0.5 bg-gray-700"></div>
+                )}
+                
+                {/* Círculo da timeline */}
+                <div className="absolute left-0 top-2 h-4 w-4 rounded-full bg-blue-500"></div>
+                
+                <div className="bg-gray-800 rounded-lg p-3">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2">
+                    <span className="text-sm font-medium text-white">{observation.createdByName}</span>
+                    <span className="text-xs text-gray-400">
+                      {(() => {
+                        try {
+                          // Verificar se é um objeto com método toDate()
+                          if (observation.createdAt && typeof observation.createdAt === 'object' && 'toDate' in observation.createdAt) {
+                            const firestoreTimestamp = observation.createdAt as { toDate(): Date };
+                            return format(firestoreTimestamp.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          }
+                          // Verificar se é um objeto Date
+                          else if (observation.createdAt instanceof Date) {
+                            return format(observation.createdAt, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          }
+                          // Verificar se é um timestamp numérico
+                          else if (typeof observation.createdAt === 'number') {
+                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          }
+                          // Verificar se é uma string ISO
+                          else if (typeof observation.createdAt === 'string') {
+                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          }
+                          // Fallback para data atual
+                          return format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                        } catch (error) {
+                          console.error('Erro ao formatar data:', error, observation.createdAt);
+                          return 'Data não disponível';
+                        }
+                      })()}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300 whitespace-pre-wrap">{observation.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">Nenhuma observação registrada.</p>
         )}
       </div>
 
@@ -439,6 +595,46 @@ export default function ClientDetail() {
                   title="Visualização de documento"
                 />
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Adicionar Observação */}
+      {showObservationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-black border border-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-medium text-white mb-4">Adicionar Observação</h3>
+            <p className="text-gray-300 mb-4">
+              Adicione uma observação sobre este cliente:
+            </p>
+            
+            <textarea
+              value={observationText}
+              onChange={(e) => setObservationText(e.target.value)}
+              rows={4}
+              className="bg-gray-900 border border-gray-700 text-white rounded-md w-full px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-4"
+              placeholder="Digite sua observação aqui..."
+            />
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowObservationModal(false)}
+                className="px-4 py-2 border border-gray-700 rounded-md text-sm font-medium text-white bg-transparent hover:bg-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveObservation}
+                disabled={!observationText.trim()}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  observationText.trim() 
+                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                    : 'bg-blue-600/50 text-white/70 cursor-not-allowed'
+                }`}
+              >
+                Salvar
+              </button>
             </div>
           </div>
         </div>

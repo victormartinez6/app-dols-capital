@@ -64,6 +64,8 @@ export default function Clients() {
   const [registrationForPendency, setRegistrationForPendency] = useState<string | null>(null);
   const [pendencyMessage, setPendencyMessage] = useState('');
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [clientToChangeStatus, setClientToChangeStatus] = useState<string | null>(null);
   
   const navigate = useNavigate();
 
@@ -92,6 +94,7 @@ export default function Clients() {
           id: doc.id,
           ...data,
           status,
+          pipelineStatus: data.pipelineStatus || 'submitted', // Garantir que sempre tenha um status de pipeline
           createdAt: data.createdAt?.toDate() || new Date(),
           pendencies: data.pendencies ? data.pendencies.map((p: any) => ({
             ...p,
@@ -109,6 +112,60 @@ export default function Clients() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const updatePipelineStatusFromProposals = async () => {
+      if (registrations.length === 0) return;
+      
+      try {
+        // Buscar todas as propostas
+        const proposalsRef = collection(db, 'proposals');
+        const proposalsSnap = await getDocs(proposalsRef);
+        const proposals = proposalsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          clientId: doc.data().clientId || doc.data().userId
+        }));
+        
+        // Criar um mapa de clientId -> pipelineStatus mais recente
+        const clientPipelineStatus = {};
+        proposals.forEach(proposal => {
+          if (!proposal.clientId) return;
+          
+          // Se o cliente já tem um status e este é mais avançado, não atualizar
+          const currentStatus = clientPipelineStatus[proposal.clientId];
+          const statusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
+          
+          if (!currentStatus || 
+              statusOrder.indexOf(proposal.pipelineStatus) > statusOrder.indexOf(currentStatus)) {
+            clientPipelineStatus[proposal.clientId] = proposal.pipelineStatus;
+          }
+        });
+        
+        // Atualizar os registros com os status do pipeline
+        const updatedRegistrations = registrations.map(registration => {
+          if (clientPipelineStatus[registration.id] || clientPipelineStatus[registration.userId]) {
+            return {
+              ...registration,
+              pipelineStatus: clientPipelineStatus[registration.id] || 
+                             clientPipelineStatus[registration.userId] || 
+                             registration.pipelineStatus
+            };
+          }
+          return registration;
+        });
+        
+        if (JSON.stringify(updatedRegistrations) !== JSON.stringify(registrations)) {
+          setRegistrations(updatedRegistrations);
+          setFilteredRegistrations(updatedRegistrations);
+        }
+      } catch (error) {
+        console.error('Erro ao atualizar status do pipeline:', error);
+      }
+    };
+    
+    updatePipelineStatusFromProposals();
+  }, [registrations.length]);
 
   const applyFilters = () => {
     let result = [...registrations];
@@ -172,9 +229,21 @@ export default function Clients() {
   };
 
   const handleEditRegistration = (registration: Registration) => {
-    const path = registration.type === 'PF' 
-      ? `/register/individual/${registration.id}` 
-      : `/register/company/${registration.id}`;
+    console.log('Editando cliente:', registration.id, 'Tipo:', registration.type);
+    
+    // Verificar o tipo de cliente e redirecionar para o formulário correto
+    let path;
+    if (registration.type === 'PF') {
+      path = `/register/individual/${registration.id}`;
+      console.log('Redirecionando para formulário individual:', path);
+    } else if (registration.type === 'PJ') {
+      path = `/register/company/${registration.id}`;
+      console.log('Redirecionando para formulário de empresa:', path);
+    } else {
+      console.error('Tipo de cliente desconhecido:', registration.type);
+      return;
+    }
+    
     navigate(path);
   };
 
@@ -275,10 +344,27 @@ export default function Clients() {
 
   const handleCreateNewClient = (type: 'PF' | 'PJ') => {
     setShowNewClientModal(false);
-    if (type === 'PF') {
-      navigate('/register/individual?admin=true');
-    } else {
-      navigate('/register/company?admin=true');
+    navigate(`/register/${type === 'PF' ? 'individual' : 'company'}`);
+  };
+
+  const updateClientStatus = async (status: Registration['status']) => {
+    if (!clientToChangeStatus) return;
+    
+    try {
+      const clientRef = doc(db, 'registrations', clientToChangeStatus);
+      
+      await updateDoc(clientRef, {
+        status: status
+      });
+      
+      // Atualizar a lista de clientes
+      fetchRegistrations();
+      
+      // Fechar o modal
+      setShowStatusModal(false);
+      setClientToChangeStatus(null);
+    } catch (error) {
+      console.error('Erro ao atualizar status do cliente:', error);
     }
   };
 
@@ -503,6 +589,16 @@ export default function Clients() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
+                        <button
+                          onClick={() => {
+                            setClientToChangeStatus(registration.id);
+                            setShowStatusModal(true);
+                          }}
+                          className="text-blue-400 hover:text-blue-300 hover:drop-shadow-[0_0_4px_rgba(59,130,246,0.6)] transition-all"
+                          title="Alterar Status"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -629,6 +725,42 @@ export default function Clients() {
                 className={`px-4 py-2 ${!pendencyMessage.trim() ? 'bg-yellow-600/50 cursor-not-allowed' : 'bg-yellow-600 hover:bg-yellow-700'} text-white rounded-md`}
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para alterar status */}
+      {showStatusModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-black border border-gray-700 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-semibold text-white mb-4">Alterar Status</h3>
+            
+            <div className="mb-4">
+              <label htmlFor="status" className="block text-sm font-medium text-white mb-1">
+                Selecione o novo status
+              </label>
+              <select
+                id="status"
+                value={registrations.find(r => r.id === clientToChangeStatus)?.status}
+                onChange={(e) => updateClientStatus(e.target.value as any)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="complete">Cadastro Completo</option>
+                <option value="documents_pending">Cadastro com Pendência</option>
+              </select>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowStatusModal(false);
+                  setClientToChangeStatus(null);
+                }}
+                className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-900"
+              >
+                Cancelar
               </button>
             </div>
           </div>

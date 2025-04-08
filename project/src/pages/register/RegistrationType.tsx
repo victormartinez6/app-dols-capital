@@ -6,8 +6,6 @@ export default function RegistrationType() {
   const navigate = useNavigate();
 
   const handleTypeSelection = (type: 'individual' | 'company') => {
-    sessionStorage.setItem('registrationType', type);
-    sessionStorage.setItem('currentStep', 'company');
     navigate(`/register/${type}`);
   };
 

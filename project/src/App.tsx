@@ -6,6 +6,7 @@ import {
 } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import PrivateRoute from './components/PrivateRoute';
@@ -35,10 +36,10 @@ const router = createBrowserRouter(
       >
         <Route path="type" element={<RegistrationType />} />
         <Route path="individual" element={<IndividualForm />} />
-        <Route path="individual/:id" element={<IndividualForm />} />
+        <Route path="individual/:id" element={<IndividualForm isEditing={true} />} />
         <Route path="individual/edit" element={<IndividualForm isEditing={true} />} />
         <Route path="company" element={<CompanyForm />} />
-        <Route path="company/:id" element={<CompanyForm />} />
+        <Route path="company/:id" element={<CompanyForm isEditing={true} />} />
         <Route path="company/edit" element={<CompanyForm isEditing={true} />} />
       </Route>
       <Route
@@ -70,7 +71,9 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <NotificationProvider>
+          <RouterProvider router={router} />
+        </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
   );

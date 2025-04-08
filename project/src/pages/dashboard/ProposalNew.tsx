@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { ArrowLeft } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -18,6 +18,8 @@ const schema = z.object({
   companyDescription: z.string().optional(),
   hasRestriction: z.boolean().optional(),
   observations: z.string().optional(),
+  bankId: z.string().optional(),
+  bankCommission: z.string().optional(),
 });
 
 const proposalStatusOptions = [
@@ -61,13 +63,14 @@ export default function ProposalNew() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [banks, setBanks] = useState<Array<{id: string, companyName: string, commission: string}>>([]);
   const [client, setClient] = useState<{
     id: string;
     name: string;
     type: 'PF' | 'PJ';
   } | null>(null);
 
-  const { register, handleSubmit, formState: { errors }, reset, watch } = useForm({
+  const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
       desiredCredit: 0,
@@ -78,10 +81,43 @@ export default function ProposalNew() {
       companyDescription: '',
       hasRestriction: false,
       observations: '',
+      bankId: '',
+      bankCommission: '',
     },
   });
 
   const hasProperty = watch('hasProperty');
+  const selectedBankId = watch('bankId');
+
+  // Efeito para carregar a lista de bancos cadastrados
+  useEffect(() => {
+    const fetchBanks = async () => {
+      try {
+        const banksCollection = collection(db, 'banks');
+        const banksSnapshot = await getDocs(banksCollection);
+        const banksList = banksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          companyName: doc.data().companyName,
+          commission: doc.data().commission || '',
+        }));
+        setBanks(banksList);
+      } catch (error) {
+        console.error('Erro ao carregar bancos:', error);
+      }
+    };
+
+    fetchBanks();
+  }, []);
+
+  // Efeito para atualizar a comissão quando um banco for selecionado
+  useEffect(() => {
+    if (selectedBankId) {
+      const selectedBank = banks.find(bank => bank.id === selectedBankId);
+      if (selectedBank) {
+        setValue('bankCommission', selectedBank.commission);
+      }
+    }
+  }, [selectedBankId, banks, setValue]);
 
   useEffect(() => {
     console.log("ProposalNew - clientId recebido:", clientId);
@@ -130,36 +166,38 @@ export default function ProposalNew() {
       setSaving(true);
       
       // Gerar número da proposta
-      const proposalNumber = `PROP-${Date.now().toString().substring(7, 13)}`;
+      const proposalNumber = `PROP-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
       
-      // Converter valores para o formato correto
+      // Criar a proposta no Firestore
       const proposalData = {
+        proposalNumber,
         clientId,
         clientName: client.name,
-        proposalNumber,
-        desiredCredit: Number(data.desiredCredit),
+        clientType: client.type,
+        desiredCredit: data.desiredCredit,
         hasProperty: data.hasProperty,
-        propertyValue: data.hasProperty && data.propertyValue ? Number(data.propertyValue) : 0,
+        propertyValue: data.hasProperty ? data.propertyValue : null,
         status: 'pending',
         pipelineStatus: 'submitted',
-        creditLine: data.creditLine || '',
-        creditReason: data.creditReason || '',
-        companyDescription: data.companyDescription || '',
-        hasRestriction: data.hasRestriction || false,
-        observations: data.observations || '',
+        creditLine: data.creditLine,
+        creditReason: data.creditReason,
+        companyDescription: data.companyDescription,
+        hasRestriction: data.hasRestriction,
+        observations: data.observations,
+        bankId: data.bankId,
+        bankCommission: data.bankCommission,
+        createdBy: user?.email || 'sistema',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        userId: user?.id || '',
       };
       
-      // Adicionar proposta ao Firestore
       const docRef = await addDoc(collection(db, 'proposals'), proposalData);
       
       setSuccessMessage('Proposta criada com sucesso!');
       
       // Aguardar um pouco para mostrar a mensagem de sucesso antes de redirecionar
       setTimeout(() => {
-        navigate(`/proposals/detail/${docRef.id}`);
+        navigate(`/dashboard/proposals/detail/${docRef.id}`);
       }, 1500);
     } catch (error) {
       console.error('Erro ao criar proposta:', error);
@@ -268,7 +306,7 @@ export default function ProposalNew() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Motivo do Crédito
+                  Finalidade do Crédito
                 </label>
                 <select
                   {...register('creditReason')}
@@ -279,6 +317,46 @@ export default function ProposalNew() {
                     <option key={reason} value={reason}>{reason}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Banco
+                  </label>
+                  <select
+                    {...register('bankId')}
+                    className="bg-black border border-gray-700 text-white rounded-md w-full px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-500"
+                  >
+                    <option value="">Selecione um banco</option>
+                    {banks.map((bank) => (
+                      <option key={bank.id} value={bank.id}>{bank.companyName}</option>
+                    ))}
+                  </select>
+                  {errors.bankId && (
+                    <p className="mt-1 text-sm text-red-500">{errors.bankId.message}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Comissão do Banco (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      {...register('bankCommission')}
+                      className="bg-black border border-gray-700 text-white rounded-md w-full px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gray-500"
+                      placeholder="0,00"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <span className="text-gray-400">%</span>
+                    </div>
+                  </div>
+                  {errors.bankCommission && (
+                    <p className="mt-1 text-sm text-red-500">{errors.bankCommission.message}</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

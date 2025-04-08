@@ -201,7 +201,7 @@ export default function Login() {
               type="submit"
               className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md ${
                 isLoading ? 'bg-gray-300 text-gray-600' : 'text-black bg-white hover:bg-gray-100'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] shadow-md transition-all duration-200`}
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] shadow-md transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02]`}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -233,7 +233,7 @@ export default function Login() {
                 onClick={() => setIsRegistering(!isRegistering)}
                 className={`group relative w-full flex justify-center py-3 px-4 border border-[#01FBA1] text-sm font-medium rounded-md text-[#01FBA1] bg-transparent ${
                   isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black hover:bg-opacity-50'
-                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] transition-all duration-200`}
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] transition-all duration-300 hover:shadow-[0_0_15px_rgba(1,251,161,0.4)] hover:-translate-y-1 hover:scale-[1.02]`}
                 disabled={isLoading}
               >
                 {isRegistering ? (
@@ -256,7 +256,7 @@ export default function Login() {
                 onClick={toggleForgotPassword}
                 className={`group relative w-full flex justify-center py-3 px-4 border border-gray-700 text-sm font-medium rounded-md text-gray-400 bg-transparent ${
                   isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black hover:bg-opacity-50'
-                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200`}
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02]`}
                 disabled={isLoading}
               >
                 <span className="flex items-center">

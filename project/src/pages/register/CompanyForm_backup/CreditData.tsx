@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import { doc, setDoc, getDoc, collection, serverTimestamp, addDoc } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import CurrencyInput from '../../../components/CurrencyInput';
@@ -20,7 +19,7 @@ interface Document {
 const schema = z.object({
   creditLine: z.string().min(1, 'Linha de Crédito é obrigatória'),
   creditReason: z.string().min(1, 'Motivo do Crédito é obrigatório'),
-  desiredCredit: z.number().min(1, 'Valor do crédito é obrigatório').nullable(),
+  desiredCredit: z.coerce.number().min(1, 'Valor do crédito é obrigatório').nullable(),
   hasRestriction: z.boolean(),
   companyDescription: z.string().min(10, 'Descrição da empresa é obrigatória'),
 });
@@ -42,9 +41,13 @@ const creditReasons = [
   'Outros',
 ];
 
-export default function CreditData() {
+interface CreditDataProps {
+  onBack: () => void;
+  onNext?: () => void;
+}
+
+export default function CreditData({ onBack, onNext }: CreditDataProps) {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [documents, setDocuments] = useState<Record<string, Document>>({});
@@ -53,7 +56,6 @@ export default function CreditData() {
   const { register, handleSubmit, formState: { errors }, reset } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
-      ...JSON.parse(sessionStorage.getItem('creditData') || '{}'),
       desiredCredit: undefined,
     },
   });
@@ -72,7 +74,6 @@ export default function CreditData() {
           if (data.documents) {
             setDocuments(data.documents);
           }
-          sessionStorage.setItem('creditData', JSON.stringify(data));
         }
       } catch (error) {
         console.error('Error loading saved data:', error);
@@ -83,10 +84,15 @@ export default function CreditData() {
   }, [user, reset]);
 
   const handleDocumentChange = (type: string, doc: Document | undefined) => {
-    setDocuments(prev => ({
-      ...prev,
-      [type]: doc,
-    }));
+    setDocuments(prev => {
+      const newDocuments = { ...prev };
+      if (doc) {
+        newDocuments[type] = doc;
+      } else {
+        delete newDocuments[type];
+      }
+      return newDocuments;
+    });
   };
 
   const handleDocumentError = (error: string) => {
@@ -97,88 +103,64 @@ export default function CreditData() {
   const onSubmit = async (data: any) => {
     try {
       setLoading(true);
-      
       if (!user) {
         throw new Error('Usuário não autenticado');
       }
 
-      const companyData = JSON.parse(sessionStorage.getItem('companyData') || '{}');
-      const representativeData = JSON.parse(sessionStorage.getItem('representativeData') || '{}');
-      const addressData = JSON.parse(sessionStorage.getItem('addressData') || '{}');
-
-      // Dados completos do cadastro
-      const registrationData = {
-        ...companyData,
-        ...representativeData,
-        ...addressData,
+      // Garantir que não haja valores undefined nos dados
+      const sanitizedData = {
         ...data,
-        documents,
-        type: 'PJ',
-        userId: user.id,
-        status: 'pending',
-        step: 'completed',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        desiredCredit: data.desiredCredit || 0,
       };
 
-      // Salvar dados de cadastro no Firestore
-      await setDoc(doc(db, 'registrations', user.id), registrationData);
+      const registrationRef = doc(db, 'registrations', user.id);
+      
+      // Verificar se há documentos anexados
+      const hasDocuments = documents && Object.keys(documents).length > 0;
+      const status = hasDocuments ? 'complete' : 'documents_pending';
+      
+      await setDoc(registrationRef, {
+        ...sanitizedData,
+        status,
+        documents: documents || {},
+        updatedAt: serverTimestamp(),
+        propertyValue: 0, // Valor padrão para PJ
+        hasProperty: false, // Valor padrão para PJ
+      }, { merge: true });
 
       // Atualizar perfil do usuário com o tipo de cadastro
       await setDoc(doc(db, 'users', user.id), {
-        registrationType: 'PJ',
+        hasCompletedRegistration: true,
       }, { merge: true });
 
-      // Criar automaticamente uma proposta com os dados do cadastro
+      // Criar uma proposta automaticamente
       const proposalData = {
-        clientName: companyData.companyName || 'Nome não disponível',
+        clientName: sanitizedData.companyName || 'Nome não disponível',
         clientId: user.id,
-        desiredCredit: data.desiredCredit || 0,
-        hasProperty: false, // Valor padrão, pode ser atualizado posteriormente
-        propertyValue: 0, // Valor padrão, pode ser atualizado posteriormente
+        desiredCredit: sanitizedData.desiredCredit || 0,
+        hasProperty: false, // Valor padrão para PJ
+        propertyValue: 0, // Valor padrão para PJ
         status: 'pending',
         pipelineStatus: 'submitted',
-        creditLine: data.creditLine,
-        creditReason: data.creditReason,
-        companyDescription: data.companyDescription,
-        hasRestriction: data.hasRestriction,
+        creditLine: sanitizedData.creditLine,
+        creditReason: sanitizedData.creditReason,
+        companyDescription: sanitizedData.companyDescription,
+        hasRestriction: sanitizedData.hasRestriction,
         userId: user.id,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        clientType: 'PJ',
       };
 
-      // Adicionar a proposta à coleção 'proposals'
       await addDoc(collection(db, 'proposals'), proposalData);
 
-      // Limpar dados de cadastro do sessionStorage
-      sessionStorage.removeItem('companyData');
-      sessionStorage.removeItem('representativeData');
-      sessionStorage.removeItem('addressData');
-      sessionStorage.removeItem('creditData');
-      
       setShowSuccessModal(true);
     } catch (error) {
-      console.error('Error saving data:', error);
-      setError('Erro ao salvar os dados. Por favor, tente novamente.');
+      console.error('Erro ao salvar formulário:', error);
+      setError('Ocorreu um erro ao salvar o formulário. Por favor, tente novamente.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const onBack = () => {
-    sessionStorage.setItem('creditData', JSON.stringify({
-      creditLine: '',
-      creditReason: '',
-      desiredCredit: 0,
-      hasRestriction: false,
-      companyDescription: '',
-    }));
-    navigate('/register/company/address');
-  };
-
-  const handleSuccessModalClose = () => {
-    setShowSuccessModal(false);
-    navigate('/', { replace: true });
   };
 
   return (
@@ -201,7 +183,7 @@ export default function CreditData() {
                 ))}
               </select>
               {errors.creditLine && (
-                <p className="mt-1 text-sm text-red-400">{errors.creditLine.message}</p>
+                <p className="mt-1 text-sm text-red-400">{String(errors.creditLine.message)}</p>
               )}
             </div>
 
@@ -219,7 +201,7 @@ export default function CreditData() {
                 ))}
               </select>
               {errors.creditReason && (
-                <p className="mt-1 text-sm text-red-400">{errors.creditReason.message}</p>
+                <p className="mt-1 text-sm text-red-400">{String(errors.creditReason.message)}</p>
               )}
             </div>
 
@@ -227,7 +209,7 @@ export default function CreditData() {
               name="desiredCredit"
               register={register}
               label="Valor do Crédito Pretendido"
-              error={errors.desiredCredit?.message}
+              error={errors.desiredCredit ? String(errors.desiredCredit.message) : undefined}
             />
 
             <div>
@@ -253,7 +235,7 @@ export default function CreditData() {
                 className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-white focus:border-gray-400 focus:ring-gray-400"
               />
               {errors.companyDescription && (
-                <p className="mt-1 text-sm text-red-400">{errors.companyDescription.message}</p>
+                <p className="mt-1 text-sm text-red-400">{String(errors.companyDescription.message)}</p>
               )}
             </div>
           </div>
@@ -296,8 +278,12 @@ export default function CreditData() {
 
       <SuccessModal
         isOpen={showSuccessModal}
-        onClose={handleSuccessModalClose}
-        message="Cadastro realizado com sucesso! Uma proposta foi criada automaticamente. Você será redirecionado para o dashboard."
+        onClose={() => {
+          // Forçar redirecionamento para a página principal usando window.location diretamente
+          window.location.href = '/';
+        }}
+        message="Cadastro realizado com sucesso!"
+        buttonText="Ir para o Dashboard"
       />
     </>
   );

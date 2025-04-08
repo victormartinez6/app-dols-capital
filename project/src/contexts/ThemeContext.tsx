@@ -8,22 +8,23 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDark, setIsDark] = useState(() => {
-    const savedTheme = localStorage.getItem('theme');
-    return savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [isDark] = useState(() => {
+    // Sempre usar dark mode como padrão
+    localStorage.setItem('theme', 'dark');
+    return true;
   });
 
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDark]);
+    // Garantir que o dark mode esteja sempre ativo
+    document.documentElement.classList.add('dark');
+    localStorage.setItem('theme', 'dark');
+  }, []);
 
-  const toggleTheme = () => setIsDark(!isDark);
+  // Manter a função toggleTheme para compatibilidade, mas ela não fará nada
+  const toggleTheme = () => {
+    // Não permitir alteração do tema
+    return;
+  };
 
   return (
     <ThemeContext.Provider value={{ isDark, toggleTheme }}>

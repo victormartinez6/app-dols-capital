@@ -4,9 +4,12 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut as firebaseSignOut
+  signOut as firebaseSignOut,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { User } from '../types';
 
@@ -16,6 +19,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
+  updateUserPassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  updateUserProfile: (userData: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -120,8 +125,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateUserPassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser || !currentUser.email) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // Reautenticar o usuário antes de alterar a senha
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        currentPassword
+      );
+      
+      await reauthenticateWithCredential(currentUser, credential);
+      
+      // Atualizar a senha
+      await updatePassword(currentUser, newPassword);
+    } catch (error) {
+      console.error('Erro ao atualizar senha:', error);
+      throw error;
+    }
+  };
+
+  const updateUserProfile = async (userData: Partial<User>) => {
+    try {
+      if (!user || !user.id) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // Atualizar no Firestore
+      const userRef = doc(db, 'users', user.id);
+      await updateDoc(userRef, userData);
+
+      // Atualizar o estado local
+      setUser(prev => {
+        if (!prev) return null;
+        return { ...prev, ...userData };
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      throw error;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      signIn, 
+      signUp, 
+      signOut,
+      updateUserPassword,
+      updateUserProfile
+    }}>
       {children}
     </AuthContext.Provider>
   );

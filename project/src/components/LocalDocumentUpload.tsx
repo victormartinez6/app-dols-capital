@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Upload, X, FileText, Loader2 } from 'lucide-react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface Document {
   name: string;
   url: string;
   type: string;
   path: string;
+  id?: string; // ID do documento no Firestore
 }
 
 interface DocumentUploadProps {
@@ -31,9 +34,9 @@ const LocalDocumentUpload: React.FC<DocumentUploadProps> = ({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      onError?.('O arquivo deve ter no máximo 5MB');
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      onError?.('O arquivo deve ter no máximo 10MB');
       return;
     }
 
@@ -51,23 +54,43 @@ const LocalDocumentUpload: React.FC<DocumentUploadProps> = ({
       const reader = new FileReader();
       reader.readAsDataURL(file);
       
-      reader.onload = () => {
-        // Criar um caminho simulado
-        const timestamp = Date.now();
-        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const path = `documents/${userId}/${type}/${timestamp}_${sanitizedFileName}`;
-        
-        // Retornar dados do documento com a URL em base64
-        if (reader.result) {
-          onChange({
-            name: file.name,
-            url: reader.result as string,
-            type,
-            path
-          });
-          console.log('Arquivo processado com sucesso');
+      reader.onload = async () => {
+        try {
+          // Criar um caminho simulado
+          const timestamp = Date.now();
+          const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const path = `documents/${userId}/${type}/${timestamp}_${sanitizedFileName}`;
+          
+          if (reader.result) {
+            // Salvar o documento em uma coleção separada
+            const docData = {
+              name: file.name,
+              url: reader.result as string,
+              type,
+              path,
+              userId,
+              createdAt: serverTimestamp()
+            };
+            
+            const docRef = await addDoc(collection(db, 'document_files'), docData);
+            
+            // Retornar apenas a referência ao documento, não o conteúdo completo
+            onChange({
+              id: docRef.id,
+              name: file.name,
+              url: `document_ref:${docRef.id}`, // Usamos um prefixo para identificar que é uma referência
+              type,
+              path
+            });
+            
+            console.log('Arquivo processado com sucesso, ID:', docRef.id);
+          }
+        } catch (error) {
+          console.error('Erro ao salvar documento:', error);
+          onError?.('Erro ao salvar o documento');
+        } finally {
+          setUploading(false);
         }
-        setUploading(false);
       };
       
       reader.onerror = (error) => {
@@ -92,19 +115,32 @@ const LocalDocumentUpload: React.FC<DocumentUploadProps> = ({
     });
   };
 
+  // Verificar se o documento é uma referência ou um documento completo
+  const isDocumentReference = document?.url && typeof document.url === 'string' && document.url.startsWith('document_ref:');
+  
+  // Determinar se o documento pode ser visualizado diretamente
+  const canViewDocument = document?.url && typeof document.url === 'string' && 
+    (document.url.startsWith('data:') || document.url.startsWith('http'));
+
   return (
     <div className="mb-4">
       <label className="block text-sm font-medium text-gray-300 mb-1">
         {label}
       </label>
       <div className="mt-1 flex items-center">
-        {document?.url ? (
+        {document?.name ? (
           <div className="flex items-center space-x-2">
             <a
-              href={document.url}
+              href={canViewDocument ? document.url : '#'}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center space-x-2 px-3 py-2 bg-[#A4A4A4] text-white rounded-md hover:bg-opacity-90 transition-all duration-200"
+              onClick={(e) => {
+                if (isDocumentReference) {
+                  e.preventDefault();
+                  alert('O documento está armazenado no servidor e pode ser visualizado no painel administrativo.');
+                }
+              }}
             >
               <FileText size={16} />
               <span className="text-sm truncate max-w-xs">{document.name}</span>
@@ -141,7 +177,7 @@ const LocalDocumentUpload: React.FC<DocumentUploadProps> = ({
         )}
       </div>
       <p className="mt-1 text-xs text-gray-400">
-        Arquivos permitidos: PDF, JPEG, PNG (máx. 5MB)
+        Arquivos permitidos: PDF, JPEG, PNG (máx. 10MB)
       </p>
     </div>
   );

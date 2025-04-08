@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, deleteDoc, where, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, where, updateDoc, getDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Eye, Pencil, Trash2, Search, X, Calendar, CheckCircle, XCircle, Clock, AlertTriangle, Plus, User, MessageSquarePlus } from 'lucide-react';
+import { Eye, Pencil, Trash2, Search, X, Calendar, CheckCircle, XCircle, Clock, AlertTriangle, Plus, User, MessageSquarePlus, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
@@ -21,6 +21,9 @@ interface Proposal {
   userId: string;
   creditLine?: string;
   creditReason?: string;
+  bankId?: string;
+  bankName?: string;
+  bankTradingName?: string;
   observationsTimeline?: {
     id: string;
     text: string;
@@ -78,18 +81,27 @@ export default function Proposals() {
   const [showObservationModal, setShowObservationModal] = useState(false);
   const [proposalToAddObservation, setProposalToAddObservation] = useState<string | null>(null);
   const [observationText, setObservationText] = useState('');
+  const [duplicatingProposal, setDuplicatingProposal] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [proposalToDuplicate, setProposalToDuplicate] = useState<string | null>(null);
+  const [proposalToDuplicateNumber, setProposalToDuplicateNumber] = useState<string | null>(null);
   const [clients, setClients] = useState<{ id: string; name: string; type: 'PF' | 'PJ' }[]>([]);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [filteredClients, setFilteredClients] = useState<{ id: string; name: string; type: 'PF' | 'PJ' }[]>([]);
   const [selectedClient, setSelectedClient] = useState<{ id: string; name: string; type: 'PF' | 'PJ' } | null>(null);
+  const [banks, setBanks] = useState<{ id: string; companyName: string; tradingName: string; commission: string }[]>([]);
 
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
   useEffect(() => {
-    fetchProposals();
+    fetchBanks();
   }, [user]);
+
+  useEffect(() => {
+    fetchProposals();
+  }, [user, banks]);
 
   useEffect(() => {
     applyFilters();
@@ -112,6 +124,22 @@ export default function Proposals() {
     }
   }, [clientSearchTerm, clients]);
 
+  const fetchBanks = async () => {
+    try {
+      const banksCollection = collection(db, 'banks');
+      const banksSnapshot = await getDocs(banksCollection);
+      const banksList = banksSnapshot.docs.map(doc => ({
+        id: doc.id,
+        companyName: doc.data().companyName || '',
+        tradingName: doc.data().tradingName || '',
+        commission: doc.data().commission || ''
+      }));
+      setBanks(banksList);
+    } catch (error) {
+      console.error('Erro ao buscar bancos:', error);
+    }
+  };
+
   const fetchProposals = async () => {
     try {
       setLoading(true);
@@ -127,8 +155,23 @@ export default function Proposals() {
       
       const querySnapshot = await getDocs(q);
       
+      // Usar a lista de bancos já carregada
+      const banksList = banks;
+      
       const proposalsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
+        
+        // Encontrar o banco correspondente
+        let bankName = "Não informado";
+        let bankTradingName = "Não informado";
+        if (data.bankId) {
+          const bank = banksList.find(b => b.id === data.bankId);
+          if (bank) {
+            bankName = bank.companyName;
+            bankTradingName = bank.tradingName;
+          }
+        }
+        
         return {
           id: doc.id,
           proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
@@ -143,6 +186,9 @@ export default function Proposals() {
           userId: data.userId || '',
           creditLine: data.creditLine || '',
           creditReason: data.creditReason || '',
+          bankId: data.bankId || '',
+          bankName: bankName,
+          bankTradingName: bankTradingName,
           observationsTimeline: data.observationsTimeline || [],
         };
       }) as Proposal[];
@@ -282,6 +328,108 @@ export default function Proposals() {
       console.error('Erro ao atualizar status da proposta:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDuplicateProposal = async (proposalId: string) => {
+    try {
+      setDuplicatingProposal(true);
+      
+      // Buscar a proposta original
+      const proposalRef = doc(db, 'proposals', proposalId);
+      const proposalSnap = await getDoc(proposalRef);
+      
+      if (!proposalSnap.exists()) {
+        console.error('Proposta não encontrada');
+        return;
+      }
+      
+      const originalProposal = proposalSnap.data();
+      
+      // Gerar um novo número de proposta
+      // Buscar todas as propostas para determinar o próximo número
+      const proposalsRef = collection(db, 'proposals');
+      const proposalsSnap = await getDocs(proposalsRef);
+      
+      // Encontrar o maior número de proposta atual
+      let maxProposalNumber = 0;
+      proposalsSnap.forEach((doc) => {
+        const proposalData = doc.data();
+        const proposalNumber = proposalData.proposalNumber;
+        
+        // Extrair o número da proposta (assumindo formato "PROP-XXXX")
+        if (proposalNumber && typeof proposalNumber === 'string') {
+          const match = proposalNumber.match(/PROP-(\d+)/);
+          if (match && match[1]) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxProposalNumber) {
+              maxProposalNumber = num;
+            }
+          }
+        }
+      });
+      
+      // Criar o próximo número de proposta
+      const nextProposalNumber = maxProposalNumber + 1;
+      const newProposalNumber = `PROP-${nextProposalNumber.toString().padStart(4, '0')}`;
+      
+      // Criar uma cópia da proposta com um novo ID
+      const newProposalData = {
+        ...originalProposal,
+        proposalNumber: newProposalNumber,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        observationsTimeline: [
+          ...originalProposal.observationsTimeline || [],
+          {
+            message: `Proposta duplicada a partir da proposta ${originalProposal.proposalNumber || 'anterior'}`,
+            date: new Date(),
+            author: user?.name || user?.email || 'Sistema',
+          }
+        ]
+      };
+      
+      // Adicionar a nova proposta ao Firestore
+      const proposalsCollectionRef = collection(db, 'proposals');
+      await addDoc(proposalsCollectionRef, newProposalData);
+      
+      // Atualizar a lista de propostas
+      fetchProposals();
+      
+      // Fechar o modal de duplicação
+      setShowDuplicateModal(false);
+      setProposalToDuplicate(null);
+      setProposalToDuplicateNumber(null);
+      
+      // Mostrar mensagem de sucesso temporária
+      const successMessage = document.createElement('div');
+      successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-md shadow-lg z-50 animate-fade-in-out';
+      successMessage.textContent = `Proposta duplicada com sucesso! Novo número: ${newProposalNumber}`;
+      document.body.appendChild(successMessage);
+      
+      // Remover a mensagem após 5 segundos
+      setTimeout(() => {
+        if (document.body.contains(successMessage)) {
+          document.body.removeChild(successMessage);
+        }
+      }, 5000);
+    } catch (error) {
+      console.error('Erro ao duplicar proposta:', error);
+      
+      // Mostrar mensagem de erro temporária
+      const errorMessage = document.createElement('div');
+      errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-md shadow-lg z-50 animate-fade-in-out';
+      errorMessage.textContent = 'Erro ao duplicar proposta. Por favor, tente novamente.';
+      document.body.appendChild(errorMessage);
+      
+      // Remover a mensagem após 5 segundos
+      setTimeout(() => {
+        if (document.body.contains(errorMessage)) {
+          document.body.removeChild(errorMessage);
+        }
+      }, 5000);
+    } finally {
+      setDuplicatingProposal(false);
     }
   };
 
@@ -484,6 +632,9 @@ export default function Proposals() {
               <thead className="bg-gray-900">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                    Data
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
                     Proposta
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
@@ -491,6 +642,9 @@ export default function Proposals() {
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
                     Valor
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                    Banco
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
                     Status
@@ -501,9 +655,6 @@ export default function Proposals() {
                     </th>
                   )}
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Data
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
                     Ações
                   </th>
                 </tr>
@@ -512,13 +663,35 @@ export default function Proposals() {
                 {filteredProposals.map((proposal) => (
                   <tr key={proposal.id} className="hover:bg-gray-900">
                     <td className="px-6 py-4 whitespace-nowrap">
+                      <div 
+                        className="text-sm text-gray-300 cursor-help"
+                        title={format(new Date(proposal.createdAt), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                      >
+                        {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-white">{proposal.proposalNumber}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">{proposal.clientName}</div>
+                      <div className="text-sm text-white">
+                        {proposal.clientId ? (
+                          <button 
+                            onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
+                            className="hover:underline hover:text-blue-300 text-left"
+                          >
+                            {proposal.clientName}
+                          </button>
+                        ) : (
+                          proposal.clientName
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-white">{formatCurrency(proposal.desiredCredit)}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-white">{proposal.bankTradingName || proposal.bankName || "Não informado"}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
@@ -532,11 +705,6 @@ export default function Proposals() {
                         </span>
                       </td>
                     )}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-300">
-                        {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
-                      </div>
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
                       <div className="flex justify-start space-x-4">
                         <button
@@ -555,6 +723,29 @@ export default function Proposals() {
                               title="Editar"
                             >
                               <Pencil className="h-4 w-4" />
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setProposalToChangeStatus(proposal.id);
+                                setShowStatusModal(true);
+                              }}
+                              className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
+                              title="Alterar Status"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setProposalToDuplicate(proposal.id);
+                                setProposalToDuplicateNumber(proposal.proposalNumber);
+                                setShowDuplicateModal(true);
+                              }}
+                              className="text-indigo-400 hover:text-indigo-300 hover:drop-shadow-[0_0_4px_rgba(129,140,248,0.6)] transition-all"
+                              title="Duplicar Proposta"
+                            >
+                              <Copy className="h-4 w-4" />
                             </button>
                             
                             <button
@@ -693,7 +884,7 @@ export default function Proposals() {
       {/* Modal de Nova Proposta */}
       {showNewProposalModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full">
+          <div className="bg-black border border-gray-800 rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-medium text-white mb-4">Criar Nova Proposta</h3>
             <p className="text-gray-300 mb-4">
               Selecione um cliente para criar uma nova proposta:
@@ -760,6 +951,49 @@ export default function Proposals() {
                 }`}
               >
                 Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Duplicar Proposta */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-medium text-white mb-4">Duplicar Proposta</h3>
+            <p className="text-gray-300 mb-6">
+              Tem certeza que deseja duplicar a proposta <span className="font-medium text-indigo-400">{proposalToDuplicateNumber}</span>? Uma nova proposta será criada com os mesmos dados.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setProposalToDuplicate(null);
+                  setProposalToDuplicateNumber(null);
+                }}
+                className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800"
+                disabled={duplicatingProposal}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (proposalToDuplicate) {
+                    handleDuplicateProposal(proposalToDuplicate);
+                  }
+                }}
+                disabled={duplicatingProposal}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {duplicatingProposal ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Duplicando...
+                  </div>
+                ) : (
+                  'Duplicar'
+                )}
               </button>
             </div>
           </div>
