@@ -5,12 +5,14 @@ import { Link, useLocation } from 'react-router-dom';
 import { FileText, Users, Settings, LogOut, LayoutDashboard, Baseline as Pipeline, Sun, Moon, UserCircle, ClipboardList } from 'lucide-react';
 import { Logo } from './Logo';
 import NotificationBell from './NotificationBell';
+import MenuNotificationBell from './MenuNotificationBell';
 
-const NavItem = ({ to, icon: Icon, children, isActive }: { 
+const NavItem = ({ to, icon: Icon, children, isActive, notificationBadge }: { 
   to: string; 
   icon: React.ElementType; 
   children: React.ReactNode;
   isActive: boolean;
+  notificationBadge?: React.ReactNode;
 }) => (
   <Link
     to={to}
@@ -22,6 +24,7 @@ const NavItem = ({ to, icon: Icon, children, isActive }: {
       <Icon className={`h-5 w-5 transition-transform duration-200 ${!isActive && 'group-hover:scale-125'}`} />
     </div>
     <span className="ml-2">{children}</span>
+    {notificationBadge}
   </Link>
 );
 
@@ -58,6 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 to={item.path}
                 icon={item.icon}
                 isActive={location.pathname === item.path}
+                notificationBadge={item.path === '/proposals' ? <MenuNotificationBell filterType="proposal" /> : undefined}
               >
                 {item.label}
               </NavItem>

@@ -1,4 +1,4 @@
-import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, limit, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export interface NotificationData {
@@ -14,6 +14,32 @@ export interface NotificationData {
 // Criar uma nova notificação
 export const createNotification = async (notificationData: NotificationData) => {
   try {
+    // Verificar se já existe uma notificação similar para evitar duplicação
+    if (notificationData.targetId) {
+      const existingQuery = query(
+        collection(db, 'notifications'),
+        where('targetId', '==', notificationData.targetId),
+        where('type', '==', notificationData.type),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      );
+      
+      const existingDocs = await getDocs(existingQuery);
+      
+      // Se já existir uma notificação para este alvo nas últimas 24 horas, não criar outra
+      if (!existingDocs.empty) {
+        const lastNotification = existingDocs.docs[0].data();
+        const lastCreatedAt = lastNotification.createdAt?.toDate ? lastNotification.createdAt.toDate() : new Date(lastNotification.createdAt);
+        const oneDayAgo = new Date();
+        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+        
+        if (lastCreatedAt > oneDayAgo) {
+          console.log('Notificação similar já existe, ignorando duplicata');
+          return existingDocs.docs[0].id;
+        }
+      }
+    }
+    
     const docRef = await addDoc(collection(db, 'notifications'), {
       ...notificationData,
       createdAt: serverTimestamp(),
