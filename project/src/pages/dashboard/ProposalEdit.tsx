@@ -15,8 +15,8 @@ const schema = z.object({
   propertyValue: z.coerce.number().nullable().optional(),
   status: z.string(),
   pipelineStatus: z.string(),
-  creditLine: z.string(),
-  creditReason: z.string(),
+  creditLine: z.string().min(1, 'Linha de crédito é obrigatória'),
+  creditReason: z.string().min(1, 'Finalidade do crédito é obrigatória'),
   companyDescription: z.string().optional(),
   hasRestriction: z.boolean(),
   observations: z.string().optional(),
@@ -173,6 +173,10 @@ export default function ProposalEdit() {
         console.log('Verificando banco após carregamento completo:', currentBankId);
         const bankExists = banks.some(bank => bank.id === currentBankId);
         console.log('O banco existe na lista após carregamento completo?', bankExists);
+        
+        if (!bankExists && banks.length > 0) {
+          console.warn('O banco não foi encontrado na lista de bancos disponíveis');
+        }
       }
     }
   }, [banks, loading, getValues]);
@@ -231,8 +235,18 @@ export default function ProposalEdit() {
         setValue('propertyValue', propertyValue);
         setValue('status', data.status || 'pending');
         setValue('pipelineStatus', data.pipelineStatus || 'submitted');
-        setValue('creditLine', data.creditLine || '');
-        setValue('creditReason', data.creditReason || '');
+        
+        // Melhorar o carregamento dos campos de crédito com logs
+        console.log('Linha de Crédito encontrada:', data.creditLine);
+        console.log('Finalidade do Crédito encontrada:', data.creditReason);
+        
+        // Verificar se os valores existem e não são vazios
+        const creditLine = data.creditLine && data.creditLine.trim() !== '' ? data.creditLine : '';
+        const creditReason = data.creditReason && data.creditReason.trim() !== '' ? data.creditReason : '';
+        
+        setValue('creditLine', creditLine);
+        setValue('creditReason', creditReason);
+        
         setValue('companyDescription', data.companyDescription || '');
         setValue('hasRestriction', Boolean(data.hasRestriction));
         setValue('observations', data.observations || '');
@@ -351,6 +365,8 @@ export default function ProposalEdit() {
       };
 
       console.log('Dados a serem salvos no Firestore:', updateData);
+      console.log('Linha de Crédito a ser salva:', data.creditLine);
+      console.log('Finalidade do Crédito a ser salva:', data.creditReason);
 
       const docRef = doc(db, 'proposals', id);
       await updateDoc(docRef, updateData);
@@ -480,6 +496,9 @@ export default function ProposalEdit() {
                     <option key={line} value={line}>{line}</option>
                   ))}
                 </select>
+                {errors.creditLine && (
+                  <p className="mt-1 text-sm text-red-500">{errors.creditLine.message}</p>
+                )}
               </div>
 
               <div>
@@ -495,6 +514,9 @@ export default function ProposalEdit() {
                     <option key={reason} value={reason}>{reason}</option>
                   ))}
                 </select>
+                {errors.creditReason && (
+                  <p className="mt-1 text-sm text-red-500">{errors.creditReason.message}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

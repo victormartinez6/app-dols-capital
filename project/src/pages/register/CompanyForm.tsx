@@ -43,8 +43,8 @@ const schema = z.object({
   neighborhood: z.string().min(3, 'Bairro é obrigatório'),
   city: z.string().min(3, 'Cidade é obrigatória'),
   state: z.string().length(2, 'Estado é obrigatório'),
-  creditLine: z.string().min(1, 'Linha de Crédito é obrigatória'),
-  creditReason: z.string().min(1, 'Motivo do Crédito é obrigatório'),
+  creditLine: z.string().optional(),
+  creditReason: z.string().optional(),
   desiredCredit: z.coerce.number().min(1, 'Valor do crédito é obrigatório').nullable(),
   hasRestriction: z.boolean(),
   companyDescription: z.string().min(10, 'Descrição da empresa é obrigatória'),
@@ -61,23 +61,6 @@ const revenueRanges = [
   '11 a 30 milhões',
   '31 a 100 milhões',
   'Acima de 100 milhões',
-];
-
-const creditLines = [
-  'Antecipação de Recebíveis',
-  'Antecipação de Licitação',
-  'Crédito com garantia de imóvel',
-  'Crédito para Importação',
-  'Capital de Giro',
-  'Outros',
-];
-
-const creditReasons = [
-  'Expandir a empresa',
-  'Comprar maquinário ou equipamentos',
-  'Investir em marketing',
-  'Contratar novos funcionários',
-  'Outros',
 ];
 
 export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
@@ -103,7 +86,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
   
   console.log('Modo de edição (empresa):', isEditMode, 'ID:', id, 'isEditing prop:', isEditing, 'location state:', locationState);
 
-  const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<FormData>({
     defaultValues: {
       ddi: '+55',
       desiredCredit: 0,
@@ -354,8 +337,13 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
           userId: registrationId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+          // Adicionar os campos de linha de crédito e finalidade
+          creditLine: sanitizedData.creditLine || 'Capital de Giro',
+          creditReason: sanitizedData.creditReason || 'Expandir a empresa',
         };
 
+        console.log('Dados da proposta a serem salvos:', proposalData);
+        
         // Adicionar a proposta à coleção 'proposals'
         await addDoc(collection(db, 'proposals'), proposalData);
       }
@@ -709,70 +697,56 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300">
-                    Linha de Crédito
+                  <label htmlFor="desiredCredit" className="block text-sm font-medium text-gray-300 mb-1">
+                    Valor do Crédito Desejado
                   </label>
-                  <select
-                    {...register('creditLine')}
-                    disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
-                  >
-                    <option value="">Selecione uma linha de crédito</option>
-                    {creditLines.map((line) => (
-                      <option key={line} value={line}>{line}</option>
-                    ))}
-                  </select>
-                  {errors.creditLine && (
-                    <p className="mt-1 text-sm text-red-400">{errors.creditLine.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300">
-                    Motivo do Crédito
-                  </label>
-                  <select
-                    {...register('creditReason')}
-                    disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
-                  >
-                    <option value="">Selecione um motivo</option>
-                    {creditReasons.map((reason) => (
-                      <option key={reason} value={reason}>{reason}</option>
-                    ))}
-                  </select>
-                  {errors.creditReason && (
-                    <p className="mt-1 text-sm text-red-400">{errors.creditReason.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    Valor do Crédito Pretendido
-                  </label>
-                  {isEditMode || id ? (
-                    <div>
-                      <input
-                        type="text"
-                        value={watch('desiredCredit') ? `R$ ${Number(watch('desiredCredit')).toFixed(2).replace('.', ',')}` : 'R$ 0,00'}
-                        disabled={true}
-                        className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 opacity-70"
-                      />
-                      <div className="text-xs text-gray-400 mt-1">
-                        Este valor não pode ser alterado pois foi definido no cadastro inicial.
-                      </div>
-                    </div>
-                  ) : (
+                  <div className="mt-1">
                     <CurrencyInput
                       name="desiredCredit"
-                      disabled={initialLoading}
                       register={register}
-                      setValue={setValue}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
-                      placeholder="Valor desejado"
                       error={errors.desiredCredit?.message}
+                      setValue={setValue}
+                      disabled={false}
                     />
-                  )}
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="creditLine" className="block text-sm font-medium text-gray-300 mb-1">
+                    Linha de Crédito
+                  </label>
+                  <div className="mt-1">
+                    <select
+                      id="creditLine"
+                      {...register('creditLine')}
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    >
+                      <option value="Capital de Giro">Capital de Giro</option>
+                      <option value="Antecipação de Recebíveis">Antecipação de Recebíveis</option>
+                      <option value="Crédito com garantia de imóvel">Crédito com garantia de imóvel</option>
+                      <option value="Crédito para Importação">Crédito para Importação</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="creditReason" className="block text-sm font-medium text-gray-300 mb-1">
+                    Finalidade do Crédito
+                  </label>
+                  <div className="mt-1">
+                    <select
+                      id="creditReason"
+                      {...register('creditReason')}
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    >
+                      <option value="Expandir a empresa">Expandir a empresa</option>
+                      <option value="Comprar maquinário ou equipamentos">Comprar maquinário ou equipamentos</option>
+                      <option value="Investir em marketing">Investir em marketing</option>
+                      <option value="Contratar novos funcionários">Contratar novos funcionários</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>

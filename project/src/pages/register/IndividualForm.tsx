@@ -40,6 +40,8 @@ const schema = z.object({
   hasProperty: z.boolean(),
   propertyValue: z.coerce.number().optional().nullable(),
   desiredCredit: z.coerce.number().min(1, 'Valor do crédito é obrigatório').nullable(),
+  creditLine: z.string().optional(),
+  creditReason: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema> & {
@@ -91,6 +93,8 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
       hasProperty: false,
       propertyValue: undefined,
       desiredCredit: undefined,
+      creditLine: '',
+      creditReason: '',
       pipelineStatus: 'novo',
     },
     resolver: zodResolver(schema),
@@ -326,8 +330,12 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           userId: registrationId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+          creditLine: sanitizedData.creditLine || 'Capital de Giro',
+          creditReason: sanitizedData.creditReason || 'Expandir a empresa',
         };
 
+        console.log('Dados da proposta a serem salvos:', proposalData);
+        
         // Adicionar a proposta à coleção 'proposals'
         await addDoc(collection(db, 'proposals'), proposalData);
       }
@@ -592,6 +600,40 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                         error={errors.desiredCredit?.message}
                       />
                     )}
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="creditLine" className="block text-sm font-medium text-gray-300 mb-1">
+                    Linha de Crédito
+                  </label>
+                  <div className="mt-1">
+                    <select
+                      id="creditLine"
+                      {...register('creditLine')}
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    >
+                      <option value="Capital de Giro">Capital de Giro</option>
+                      <option value="Investimento">Investimento</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="creditReason" className="block text-sm font-medium text-gray-300 mb-1">
+                    Finalidade do Crédito
+                  </label>
+                  <div className="mt-1">
+                    <select
+                      id="creditReason"
+                      {...register('creditReason')}
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    >
+                      <option value="Expandir a empresa">Expandir a empresa</option>
+                      <option value="Modernizar a empresa">Modernizar a empresa</option>
+                      <option value="Outros">Outros</option>
+                    </select>
                   </div>
                 </div>
               </div>

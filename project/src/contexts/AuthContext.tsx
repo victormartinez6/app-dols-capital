@@ -68,8 +68,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
       
       if (!userDoc.exists()) {
-        await firebaseSignOut(auth);
-        throw new Error('User document not found');
+        console.log('Documento do usuário não encontrado. Recriando...');
+        
+        // Recriar o documento do usuário com informações básicas
+        const userData = {
+          email: userCredential.user.email || email,
+          name: userCredential.user.displayName || 'Usuário',
+          role: 'client', // Papel padrão
+          createdAt: serverTimestamp(),
+        };
+        
+        // Salvar o documento no Firestore
+        await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+        
+        // Retornar o usuário recém-criado
+        const user = {
+          id: userCredential.user.uid,
+          ...userData,
+          createdAt: new Date(),
+        } as User;
+        
+        setUser(user);
+        return;
       }
 
       const userData = userDoc.data();
