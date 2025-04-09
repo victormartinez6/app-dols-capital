@@ -239,10 +239,12 @@ export default function Users() {
   };
 
   const handleViewUser = (userId: string) => {
+    console.log('Visualizando usuário:', userId);
     navigate(`/users/detail/${userId}`);
   };
 
   const handleEditUser = (userId: string) => {
+    console.log('Editando usuário:', userId);
     navigate(`/users/edit/${userId}`);
   };
 
@@ -418,91 +420,99 @@ export default function Users() {
         <div className="flex justify-center items-center py-16">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
         </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="bg-black border border-gray-700 rounded-lg p-8 text-center text-gray-400">
+          Nenhum usuário encontrado com os filtros selecionados.
+        </div>
       ) : (
-        <div className="bg-black border border-gray-700 rounded-lg overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-              <div className="text-center">
-                <p className="mb-2">Nenhum usuário encontrado.</p>
-                {(nameFilter || roleFilter !== 'all' || registrationFilter !== 'all') && (
-                  <button
-                    onClick={resetFilters}
-                    className="text-blue-400 hover:text-blue-300"
-                  >
-                    Limpar filtros
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div>
-              {/* Versão Desktop */}
-              <div className="hidden md:block">
-                <table className="w-full">
-                  <thead className="bg-gray-900 text-white">
-                    <tr>
-                      <th className="py-3 px-4 text-left">Nome</th>
-                      <th className="py-3 px-4 text-left">E-mail</th>
-                      <th className="py-3 px-4 text-left">Perfil</th>
-                      <th className="py-3 px-4 text-left">Cadastro</th>
-                      <th className="py-3 px-4 text-left">Criado em</th>
-                      <th className="py-3 px-4 text-left">Status</th>
-                      <th className="py-3 px-4 text-right">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {filteredUsers.map(user => (
-                      <tr key={user.id} className="hover:bg-gray-900/50">
-                        <td className="py-3 px-4 text-white">{user.name}</td>
-                        <td className="py-3 px-4 text-gray-300">{user.email}</td>
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
-                            {roleLabels[user.role]}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-gray-300">
+        <>
+          {/* Versão Desktop */}
+          <div className="hidden md:block">
+            <div className="bg-black border border-gray-700 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-800">
+                <thead className="bg-gray-900">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Nome
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      E-mail
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Perfil
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Cadastro
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Criado em
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Status
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-black divide-y divide-gray-800">
+                  {filteredUsers.map(user => (
+                    <tr key={user.id} className="hover:bg-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-white">{user.name}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-300">{user.email}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
+                          {roleLabels[user.role]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm">
                           {user.hasRegistration ? (
                             <span className="text-green-400">Sim ({user.registrationType === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'})</span>
                           ) : (
                             <span className="text-gray-500">Não</span>
                           )}
-                        </td>
-                        <td className="py-3 px-4 text-gray-300">{formatDate(user.createdAt)}</td>
-                        <td className="py-3 px-4 text-gray-300">
-                          {user.blocked ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-400/10 text-red-400">
-                              <Lock className="h-3 w-3 mr-1" />
-                              Bloqueado
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-400/10 text-green-400">
-                              <Unlock className="h-3 w-3 mr-1" />
-                              Ativo
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right space-x-2">
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-300">{formatDate(user.createdAt)}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {user.blocked ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-400/10 text-red-400">
+                            <Lock className="h-3 w-3 mr-1" />
+                            Bloqueado
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-400/10 text-green-400">
+                            <Unlock className="h-3 w-3 mr-1" />
+                            Ativo
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
+                        <div className="flex justify-start space-x-4">
                           <button
                             onClick={() => handleViewUser(user.id)}
-                            className="text-gray-400 hover:text-white transition-colors"
+                            className="text-cyan-400 hover:text-cyan-300 hover:drop-shadow-[0_0_4px_rgba(34,211,238,0.6)] transition-all"
                             title="Ver detalhes"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleEditUser(user.id)}
-                            className="text-gray-400 hover:text-white transition-colors"
+                            className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
                             title="Editar"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleBlockUser(user.id, user.name, user.blocked || false)}
-                            className="text-gray-400 hover:text-white transition-colors"
+                            className={`${user.blocked ? 'text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)]' : 'text-orange-400 hover:text-orange-300 hover:drop-shadow-[0_0_4px_rgba(251,146,60,0.6)]'} transition-all`}
                             title={user.blocked ? "Desbloquear" : "Bloquear"}
                           >
                             {user.blocked ? (
@@ -513,103 +523,128 @@ export default function Users() {
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user.id, user.name)}
-                            className="text-gray-400 hover:text-red-400 transition-colors"
+                            className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
                             title="Excluir"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Versão Mobile - Cards */}
-              <div className="md:hidden">
-                <div className="divide-y divide-gray-800">
-                  {filteredUsers.map(user => (
-                    <div key={user.id} className="p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="text-white font-medium">{user.name}</h3>
-                          <p className="text-gray-400 text-sm">{user.email}</p>
                         </div>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
-                          {roleLabels[user.role]}
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                        <div>
-                          <span className="text-gray-500">Cadastro:</span>
-                          <span className="text-gray-300 ml-1">
-                            {user.hasRegistration ? (
-                              <span className="text-green-400">Sim ({user.registrationType === 'PF' ? 'PF' : 'PJ'})</span>
-                            ) : (
-                              <span className="text-gray-500">Não</span>
-                            )}
-                          </span>
-                        </div>
-                        
-                        <div>
-                          <span className="text-gray-500">Status:</span>
-                          <span className="text-gray-300 ml-1">
-                            {user.blocked ? (
-                              <span className="text-red-400">Bloqueado</span>
-                            ) : (
-                              <span className="text-green-400">Ativo</span>
-                            )}
-                          </span>
-                        </div>
-                        
-                        <div>
-                          <span className="text-gray-500">Criado em:</span>
-                          <span className="text-gray-300 ml-1">{formatDate(user.createdAt)}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex justify-end space-x-3">
-                        <button
-                          onClick={() => handleViewUser(user.id)}
-                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
-                          title="Ver detalhes"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEditUser(user.id)}
-                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
-                          title="Editar"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleBlockUser(user.id, user.name, user.blocked || false)}
-                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
-                          title={user.blocked ? "Desbloquear" : "Bloquear"}
-                        >
-                          {user.blocked ? (
-                            <Unlock className="h-4 w-4" />
-                          ) : (
-                            <Lock className="h-4 w-4" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(user.id, user.name)}
-                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-red-400 transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          {/* Versão Mobile - Cards */}
+          <div className="md:hidden">
+            <div className="divide-y divide-gray-800">
+              {filteredUsers.map(user => (
+                <div key={user.id} className="p-4 bg-black">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <div className="text-sm font-medium text-white mb-1">{user.name}</div>
+                      <div className="text-xs text-gray-400">
+                        {user.email}
                       </div>
                     </div>
-                  ))}
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleViewUser(user.id)}
+                        className="text-cyan-400 hover:text-cyan-300 hover:drop-shadow-[0_0_4px_rgba(34,211,238,0.6)] transition-all"
+                        title="Ver detalhes"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleEditUser(user.id)}
+                        className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
+                        title="Editar"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Perfil</div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
+                        {roleLabels[user.role]}
+                      </span>
+                    </div>
+                    
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Cadastro</div>
+                      <div className="text-sm">
+                        {user.hasRegistration ? (
+                          <span className="text-green-400">Sim ({user.registrationType === 'PF' ? 'PF' : 'PJ'})</span>
+                        ) : (
+                          <span className="text-gray-500">Não</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Criado em</div>
+                      <div className="text-sm text-white">{formatDate(user.createdAt)}</div>
+                    </div>
+                    
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">Status</div>
+                      {user.blocked ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-400/10 text-red-400">
+                          <Lock className="h-3 w-3 mr-1" />
+                          Bloqueado
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-400/10 text-green-400">
+                          <Unlock className="h-3 w-3 mr-1" />
+                          Ativo
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end space-x-2 mt-2 pt-2 border-t border-gray-800">
+                    <button
+                      onClick={() => handleBlockUser(user.id, user.name, user.blocked || false)}
+                      className={`px-3 py-1 rounded-md text-xs font-medium ${
+                        user.blocked 
+                          ? 'bg-green-400/10 text-green-400 hover:bg-green-400/20' 
+                          : 'bg-orange-400/10 text-orange-400 hover:bg-orange-400/20'
+                      }`}
+                    >
+                      {user.blocked ? (
+                        <span className="flex items-center">
+                          <Unlock className="h-3 w-3 mr-1" />
+                          Desbloquear
+                        </span>
+                      ) : (
+                        <span className="flex items-center">
+                          <Lock className="h-3 w-3 mr-1" />
+                          Bloquear
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user.id, user.name)}
+                      className="px-3 py-1 rounded-md bg-red-400/10 text-red-400 hover:bg-red-400/20 text-xs font-medium"
+                    >
+                      <span className="flex items-center">
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Excluir
+                      </span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+        </>
       )}
       {/* Modal de Novo Usuário */}
       {isModalOpen && (

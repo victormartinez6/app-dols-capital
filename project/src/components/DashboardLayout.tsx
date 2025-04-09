@@ -183,6 +183,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <Menu className="h-6 w-6" />
             </button>
+            {/* Logo mobile */}
+            <div className="md:hidden mr-3">
+              <Logo className="h-8 w-auto" variant={isDark ? "white" : "default"} isMobile={true} />
+            </div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
               {(() => {
                 // Verificar se o caminho atual começa com algum dos caminhos definidos

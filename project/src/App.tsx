@@ -21,8 +21,6 @@ import ProposalDetail from './pages/dashboard/ProposalDetail';
 import ProposalEdit from './pages/dashboard/ProposalEdit';
 import ProposalNew from './pages/dashboard/ProposalNew';
 import Settings from './pages/dashboard/Settings';
-import SettingsTest from './pages/dashboard/SettingsTest';
-import Users from './pages/dashboard/Users';
 
 // Configurando o roteador com as flags futuras
 const router = createBrowserRouter(
@@ -40,10 +38,8 @@ const router = createBrowserRouter(
         <Route path="type" element={<RegistrationType />} />
         <Route path="individual" element={<IndividualForm />} />
         <Route path="individual/:id" element={<IndividualForm isEditing={true} />} />
-        <Route path="individual/edit" element={<IndividualForm isEditing={true} />} />
         <Route path="company" element={<CompanyForm />} />
         <Route path="company/:id" element={<CompanyForm isEditing={true} />} />
-        <Route path="company/edit" element={<CompanyForm isEditing={true} />} />
       </Route>
       <Route
         path="/*"
@@ -61,7 +57,6 @@ const router = createBrowserRouter(
         <Route path="proposals/edit/:id" element={<ProposalEdit />} />
         <Route path="proposals/new/:clientId" element={<ProposalNew />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="users" element={<Users />} />
       </Route>
     </Route>
   ),

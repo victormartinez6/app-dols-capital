@@ -604,7 +604,7 @@ export default function Pipeline() {
                                 
                                 <div className="flex justify-between items-center">
                                   <span className="text-blue-400 font-medium truncate">
-                                    R$ {formatCurrency(proposal.desiredCredit)}
+                                    {formatCurrency(proposal.desiredCredit)}
                                   </span>
                                   <div className="text-xs text-gray-400">
                                     {(() => {
