@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { ArrowLeft, Building2, User, FileText, MessageSquarePlus } from 'lucide-react';
+import { ArrowLeft, Building2, User, FileText, MessageSquarePlus, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '../../contexts/AuthContext';
@@ -94,10 +94,10 @@ export default function ClientDetail() {
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [documentViewUrl, setDocumentViewUrl] = useState<string | null>(null);
-  const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [showObservationModal, setShowObservationModal] = useState(false);
   const [observationText, setObservationText] = useState('');
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [currentDocument, setCurrentDocument] = useState<{ url: string; name: string; type?: string }>({ url: '', name: '' });
 
   useEffect(() => {
     const fetchRegistration = async () => {
@@ -126,25 +126,135 @@ export default function ClientDetail() {
               }))
             : [];
           
-          setRegistration({
-            id: docSnap.id,
+          // Processar documentos para adicionar URLs
+          const processedDocuments: Record<string, any> = {};
+          
+          if (data.documents) {
+            console.log('Estrutura original dos documentos:', JSON.stringify(data.documents, null, 2));
+            
+            // Função para buscar documento da coleção document_files
+            const fetchDocumentFile = async (docId: string) => {
+              try {
+                const docFileRef = doc(db, 'document_files', docId);
+                const docFileSnap = await getDoc(docFileRef);
+                
+                if (docFileSnap.exists()) {
+                  return docFileSnap.data();
+                }
+                return null;
+              } catch (error) {
+                console.error(`Erro ao buscar documento ${docId}:`, error);
+                return null;
+              }
+            };
+            
+            // Processar cada documento
+            const documentPromises = [];
+            
+            for (const [key, doc] of Object.entries(data.documents)) {
+              if (typeof doc === 'object' && doc !== null) {
+                const docData = doc as Record<string, any>;
+                console.log(`Documento ${key}:`, docData);
+                
+                // Se o documento tiver um ID, buscar da coleção document_files
+                if (docData.id) {
+                  // Adicionar uma promessa para buscar o documento
+                  documentPromises.push(
+                    fetchDocumentFile(docData.id).then(docFileData => {
+                      if (docFileData) {
+                        console.log(`Documento ${key} encontrado na coleção document_files:`, docFileData);
+                        processedDocuments[key] = {
+                          ...docData,
+                          ...docFileData,
+                          // Garantir que temos uma URL válida
+                          url: docFileData.downloadURL || docFileData.url || docData.url || `/api/documents/${docData.id}`
+                        };
+                      } else {
+                        console.log(`Documento ${key} não encontrado na coleção document_files, usando dados do cliente`);
+                        processedDocuments[key] = {
+                          ...docData,
+                          // Usar o URL direto do Storage se disponível
+                          url: docData.url || docData.downloadURL || `/api/documents/${docData.id}`
+                        };
+                      }
+                    })
+                  );
+                } else {
+                  processedDocuments[key] = docData;
+                }
+              }
+            }
+            
+            // Aguardar todas as promessas de busca de documentos
+            await Promise.all(documentPromises);
+          }
+          
+          console.log('Documentos processados:', processedDocuments);
+          
+          // Buscar o status do pipeline mais recente das propostas
+          const proposalsRef = collection(db, 'proposals');
+          const proposalsSnap = await getDocs(proposalsRef);
+          const proposals = proposalsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            clientId: doc.data().clientId || doc.data().userId,
+            pipelineStatus: doc.data().pipelineStatus
+          }));
+          
+          // Filtrar propostas para este cliente
+          const clientProposals = proposals.filter(proposal => 
+            proposal.clientId === id || 
+            proposal.clientId === data.userId
+          );
+          
+          // Determinar o status do pipeline
+          let pipelineStatus = data.pipelineStatus;
+          
+          if (clientProposals.length > 0) {
+            // Encontrar o status mais avançado no pipeline
+            const statusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
+            let mostAdvancedIndex = statusOrder.indexOf(pipelineStatus);
+            
+            clientProposals.forEach(proposal => {
+              if (proposal.pipelineStatus) {
+                const proposalStatusIndex = statusOrder.indexOf(proposal.pipelineStatus);
+                if (proposalStatusIndex > mostAdvancedIndex) {
+                  mostAdvancedIndex = proposalStatusIndex;
+                  pipelineStatus = proposal.pipelineStatus;
+                }
+              }
+            });
+          }
+          
+          if (!pipelineStatus) {
+            pipelineStatus = 'submitted';
+          }
+          
+          console.log('Status do Pipeline final:', pipelineStatus);
+          
+          // Atualizar o estado com os dados do cliente e o status do pipeline correto
+          const registrationData: Registration = {
             ...data,
-            createdAt: data.createdAt?.toDate() || new Date(),
-            pendencies: data.pendencies ? data.pendencies.map((p: any) => ({
-              ...p,
-              createdAt: p.createdAt?.toDate() || new Date(),
-              resolvedAt: p.resolvedAt?.toDate() || undefined,
-            })) : [],
+            id,
+            type: data.type || 'PF',
+            status: data.status || 'complete',
+            pipelineStatus: pipelineStatus,
+            userId: data.userId || '',
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
             observationsTimeline: safeObservationsTimeline,
-          } as Registration);
+            documents: processedDocuments
+          };
+          
+          setRegistration(registrationData);
+          setLoading(false);
         } else {
-          console.error('Cliente não encontrado no Firestore para o ID:', id);
-          setError('Cadastro não encontrado');
+          console.error('Cliente não encontrado');
+          setError('Cliente não encontrado');
+          setLoading(false);
         }
       } catch (error) {
-        console.error('Erro ao buscar cadastro:', error);
-        setError('Erro ao carregar os dados do cadastro');
-      } finally {
+        console.error('Erro ao buscar cliente:', error);
+        setError('Erro ao buscar cliente');
         setLoading(false);
       }
     };
@@ -173,14 +283,57 @@ export default function ClientDetail() {
     navigate(path);
   };
 
-  const handleDocumentView = (url: string) => {
-    setDocumentViewUrl(url);
+  const handleDocumentView = (docData: any) => {
+    console.log('Dados completos do documento:', docData);
+    
+    // Se a URL for relativa, converter para URL absoluta
+    let fullUrl = docData.url || '';
+    let docType = docData.contentType || docData.type || '';
+    
+    // Verificar se temos uma URL direta do Storage
+    if (docData.downloadURL) {
+      fullUrl = docData.downloadURL;
+      console.log('Usando downloadURL do documento:', fullUrl);
+    } else if (docData.url) {
+      fullUrl = docData.url;
+      console.log('Usando url do documento:', fullUrl);
+    } else if (docData.fileURL) {
+      fullUrl = docData.fileURL;
+      console.log('Usando fileURL do documento:', fullUrl);
+    }
+    
+    // Converter URL relativa para absoluta se necessário
+    if (fullUrl && fullUrl.startsWith('/')) {
+      fullUrl = `${window.location.origin}${fullUrl}`;
+      console.log('URL relativa convertida para absoluta:', fullUrl);
+    }
+    
+    // Se não temos URL, não podemos mostrar o documento
+    if (!fullUrl) {
+      console.error('Documento sem URL válida:', docData);
+      alert('Não foi possível encontrar uma URL válida para este documento.');
+      return;
+    }
+    
+    console.log('Visualizando documento:', docData.name, fullUrl);
+    
+    // Tentar determinar o tipo do documento pela extensão se não tivermos o tipo
+    if (!docType) {
+      const extension = fullUrl.split('.').pop()?.toLowerCase();
+      if (extension === 'pdf') {
+        docType = 'application/pdf';
+      } else if (['jpg', 'jpeg', 'png', 'gif'].includes(extension || '')) {
+        docType = `image/${extension}`;
+      }
+    }
+    
+    // Definir o documento atual e abrir o modal
+    setCurrentDocument({ 
+      url: fullUrl, 
+      name: docData.name || 'Documento', 
+      type: docType
+    });
     setShowDocumentModal(true);
-  };
-
-  const handleCloseDocumentModal = () => {
-    setShowDocumentModal(false);
-    setDocumentViewUrl(null);
   };
 
   const handleAddObservation = () => {
@@ -263,20 +416,22 @@ export default function ClientDetail() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center space-x-4">
-        <button 
-          onClick={() => navigate(-1)} 
-          className="p-2 text-white bg-gray-800 rounded-full hover:bg-gray-700"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <h2 className="text-2xl font-bold text-white">Detalhes do Cliente</h2>
+    <div className="space-y-6 max-w-full overflow-x-hidden">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-0">
+        <div className="flex items-center space-x-4">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="p-2 text-white bg-gray-800 rounded-full hover:bg-gray-700"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h2 className="text-xl md:text-2xl font-bold text-white">Detalhes do Cliente</h2>
+        </div>
         
-        <div className="flex-1 flex justify-end">
+        <div className="w-full sm:flex-1 sm:flex sm:justify-end">
           <button
             onClick={handleEditClick}
-            className="px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100"
+            className="w-full sm:w-auto px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100"
           >
             Editar Cadastro
           </button>
@@ -284,11 +439,11 @@ export default function ClientDetail() {
       </div>
 
       {/* Conteúdo principal */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         {/* Informações Básicas */}
-        <div className="md:col-span-2 bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+        <div className="md:col-span-2 bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-semibold text-white">Informações do Cliente</h3>
+            <h3 className="text-lg md:text-xl font-semibold text-white">Informações do Cliente</h3>
             <div className="flex items-center space-x-2">
               {registration.type === 'PJ' ? (
                 <Building2 className="h-5 w-5 text-blue-400" />
@@ -303,7 +458,7 @@ export default function ClientDetail() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             <div className="space-y-4">
               <div>
                 <h4 className="text-sm font-medium text-gray-400">
@@ -382,8 +537,8 @@ export default function ClientDetail() {
         </div>
 
         {/* Status e Informações Adicionais */}
-        <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
-          <h3 className="text-xl font-semibold text-white">Status</h3>
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+          <h3 className="text-lg md:text-xl font-semibold text-white">Status</h3>
 
           <div className="space-y-4">
             <div>
@@ -403,39 +558,49 @@ export default function ClientDetail() {
             </div>
 
             <div>
-              <h4 className="text-sm font-medium text-gray-400">Status do Pipeline</h4>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 ${
-                pipelineStatusColors[registration.pipelineStatus]
-              }`}>
-                {pipelineStatusLabels[registration.pipelineStatus]}
-              </span>
+              <h4 className="text-sm font-medium text-gray-400">Status do Pipeline:</h4>
+              <div className="mt-2">
+                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${pipelineStatusColors[registration.pipelineStatus as keyof typeof pipelineStatusColors]}`}>
+                  {pipelineStatusLabels[registration.pipelineStatus as keyof typeof pipelineStatusLabels]}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Documentos */}
-      <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
-        <h3 className="text-xl font-semibold text-white">Documentos</h3>
+      <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg md:text-xl font-semibold text-white">Documentos</h3>
+          {registration.documents && Object.keys(registration.documents).length > 0 && (
+            <span className="text-sm text-blue-400">
+              {Object.keys(registration.documents).filter(key => registration.documents![key] && registration.documents![key].url).length} documento(s)
+            </span>
+          )}
+        </div>
 
         {registration.documents && Object.keys(registration.documents).length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Object.entries(registration.documents)
               .filter(([_, doc]) => doc && doc.url) // Filtra apenas documentos válidos com URL
               .map(([key, doc]) => (
-                <div key={key} className="border border-gray-800 rounded-lg p-4 flex items-start space-x-3">
-                  <FileText className="h-5 w-5 text-blue-400 mt-0.5" />
-                  <div>
-                    <h4 className="text-sm font-medium text-white">{documentLabels[key] || key}</h4>
+                <div key={key} className="border border-gray-800 rounded-lg p-4 flex items-start space-x-3 hover:bg-gray-900 transition-colors">
+                  <FileText className="h-5 w-5 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="overflow-hidden">
+                    <h4 className="text-sm font-medium text-white truncate">{documentLabels[key] || key}</h4>
+                    <p className="text-xs text-gray-400 mb-2 truncate">
+                      {doc.name || 'Documento anexado'}
+                    </p>
                     <a 
                       href="#"
-                      className="text-xs text-blue-400 hover:underline"
+                      className="text-xs text-blue-400 hover:text-blue-300"
                       onClick={(e) => {
                         e.preventDefault();
-                        handleDocumentView(doc.url);
+                        handleDocumentView(doc);
                       }}
                     >
-                      Visualizar documento
+                      <span>Visualizar documento</span>
                     </a>
                   </div>
                 </div>
@@ -447,11 +612,11 @@ export default function ClientDetail() {
       </div>
 
       {/* Histórico de Pendências */}
-      <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
-        <h3 className="text-xl font-semibold text-white">Histórico de Pendências</h3>
+      <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+        <h3 className="text-lg md:text-xl font-semibold text-white">Histórico de Pendências</h3>
 
         {registration.pendencies && registration.pendencies.length > 0 ? (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {registration.pendencies.map((pendency, index) => (
               <div key={index} className="relative pl-8 pb-6">
                 {/* Linha vertical conectando os itens */}
@@ -500,55 +665,32 @@ export default function ClientDetail() {
       </div>
       
       {/* Timeline de Observações */}
-      <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+      <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
         <div className="flex justify-between items-center">
-          <h3 className="text-xl font-semibold text-white">Observações</h3>
+          <h3 className="text-lg md:text-xl font-semibold text-white">Observações</h3>
           <button
             onClick={handleAddObservation}
             className="flex items-center text-sm text-blue-400 hover:text-blue-300"
           >
             <MessageSquarePlus className="h-4 w-4 mr-1" />
-            Nova Observação
+            Adicionar
           </button>
         </div>
         
         {registration.observationsTimeline && registration.observationsTimeline.length > 0 ? (
           <div className="space-y-4">
-            {registration.observationsTimeline.map((observation, index) => (
-              <div key={observation.id} className="relative pl-6 pb-4">
-                {/* Linha vertical da timeline */}
-                {index < registration.observationsTimeline!.length - 1 && (
-                  <div className="absolute left-2 top-3 bottom-0 w-0.5 bg-gray-700"></div>
-                )}
-                
-                {/* Círculo da timeline */}
-                <div className="absolute left-0 top-2 h-4 w-4 rounded-full bg-blue-500"></div>
-                
-                <div className="bg-gray-800 rounded-lg p-3">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2">
-                    <span className="text-sm font-medium text-white">{observation.createdByName}</span>
-                    <span className="text-xs text-gray-400">
+            {registration.observationsTimeline.map((observation) => (
+              <div key={observation.id} className="bg-gray-900 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
+                  <div className="font-medium text-white mb-1 sm:mb-0">{observation.createdByName}</div>
+                  <div className="text-xs text-gray-400">
+                    <span>
                       {(() => {
                         try {
-                          // Verificar se é um objeto com método toDate()
-                          if (observation.createdAt && typeof observation.createdAt === 'object' && 'toDate' in observation.createdAt) {
-                            const firestoreTimestamp = observation.createdAt as { toDate(): Date };
-                            return format(firestoreTimestamp.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          if (typeof observation.createdAt === 'string') {
+                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
                           }
-                          // Verificar se é um objeto Date
-                          else if (observation.createdAt instanceof Date) {
-                            return format(observation.createdAt, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                          }
-                          // Verificar se é um timestamp numérico
-                          else if (typeof observation.createdAt === 'number') {
-                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                          }
-                          // Verificar se é uma string ISO
-                          else if (typeof observation.createdAt === 'string') {
-                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                          }
-                          // Fallback para data atual
-                          return format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          return format(observation.createdAt, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
                         } catch (error) {
                           console.error('Erro ao formatar data:', error, observation.createdAt);
                           return 'Data não disponível';
@@ -556,8 +698,8 @@ export default function ClientDetail() {
                       })()}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-300 whitespace-pre-wrap">{observation.text}</p>
                 </div>
+                <p className="text-sm text-gray-300 whitespace-pre-wrap">{observation.text}</p>
               </div>
             ))}
           </div>
@@ -566,44 +708,10 @@ export default function ClientDetail() {
         )}
       </div>
 
-      {/* Modal de visualização de documentos */}
-      {showDocumentModal && documentViewUrl && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-lg p-4 max-w-4xl max-h-[90vh] w-full flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-semibold text-white">Visualização de Documento</h3>
-              <button 
-                onClick={handleCloseDocumentModal}
-                className="text-gray-400 hover:text-white"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto bg-gray-800 rounded-lg flex items-center justify-center">
-              {documentViewUrl.startsWith('data:image') ? (
-                <img 
-                  src={documentViewUrl} 
-                  alt="Documento" 
-                  className="max-w-full max-h-[70vh] object-contain" 
-                />
-              ) : (
-                <iframe 
-                  src={documentViewUrl} 
-                  className="w-full h-[70vh]" 
-                  title="Visualização de documento"
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      
       {/* Modal de Adicionar Observação */}
       {showObservationModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-black border border-gray-800 rounded-lg p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 max-w-md w-full">
             <h3 className="text-lg font-medium text-white mb-4">Adicionar Observação</h3>
             <p className="text-gray-300 mb-4">
               Adicione uma observação sobre este cliente:
@@ -617,17 +725,17 @@ export default function ClientDetail() {
               placeholder="Digite sua observação aqui..."
             />
             
-            <div className="flex justify-end space-x-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
               <button
                 onClick={() => setShowObservationModal(false)}
-                className="px-4 py-2 border border-gray-700 rounded-md text-sm font-medium text-white bg-transparent hover:bg-gray-800"
+                className="px-4 py-2 border border-gray-700 rounded-md text-sm font-medium text-white bg-transparent hover:bg-gray-800 order-2 sm:order-1"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveObservation}
                 disabled={!observationText.trim()}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                className={`px-4 py-2 rounded-md text-sm font-medium order-1 sm:order-2 ${
                   observationText.trim() 
                     ? 'bg-blue-600 text-white hover:bg-blue-700' 
                     : 'bg-blue-600/50 text-white/70 cursor-not-allowed'
@@ -635,6 +743,92 @@ export default function ClientDetail() {
               >
                 Salvar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Visualizar Documento */}
+      {showDocumentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-white">{currentDocument.name}</h3>
+              <button 
+                onClick={() => setShowDocumentModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto min-h-[500px] bg-gray-900 rounded-md">
+              {(() => {
+                // Verificar a extensão do arquivo
+                const fileExtension = currentDocument.name.split('.').pop()?.toLowerCase();
+                const isPdf = fileExtension === 'pdf' || currentDocument.type?.includes('pdf');
+                const isImage = ['jpg', 'jpeg', 'png'].includes(fileExtension || '') || 
+                               currentDocument.type?.includes('image/');
+                
+                console.log('Tipo de arquivo:', fileExtension, 'isPdf:', isPdf, 'isImage:', isImage);
+                
+                if (isImage) {
+                  // Renderizar imagem diretamente
+                  return (
+                    <div className="h-full flex items-center justify-center p-4">
+                      <img 
+                        src={currentDocument.url} 
+                        alt={currentDocument.name}
+                        className="max-w-full max-h-full object-contain"
+                      />
+                    </div>
+                  );
+                } else if (isPdf) {
+                  // Para PDFs, tentar exibir diretamente com iframe
+                  return (
+                    <div className="h-full flex flex-col">
+                      <iframe
+                        src={currentDocument.url}
+                        frameBorder="0"
+                        width="100%"
+                        height="100%"
+                        className="min-h-[500px] w-full"
+                        style={{ backgroundColor: 'white' }}
+                        allow="fullscreen"
+                      />
+                    </div>
+                  );
+                } else {
+                  // Para outros tipos, tentar com iframe
+                  return (
+                    <iframe
+                      src={currentDocument.url}
+                      frameBorder="0"
+                      width="100%"
+                      height="100%"
+                      className="min-h-[500px] w-full"
+                      style={{ backgroundColor: 'white' }}
+                      sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        console.error('Erro ao carregar iframe:', e);
+                      }}
+                    />
+                  );
+                }
+              })()}
+            </div>
+            
+            <div className="flex justify-end mt-4">
+              <a 
+                href={currentDocument.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                download={currentDocument.name}
+              >
+                Baixar
+              </a>
             </div>
           </div>
         </div>

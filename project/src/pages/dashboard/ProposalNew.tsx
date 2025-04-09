@@ -10,9 +10,9 @@ import CurrencyInput from '../../components/CurrencyInput';
 import { useAuth } from '../../contexts/AuthContext';
 
 const schema = z.object({
-  desiredCredit: z.number().min(1, 'Valor do crédito é obrigatório'),
+  desiredCredit: z.coerce.number().min(1, 'Valor do crédito é obrigatório'),
   hasProperty: z.boolean(),
-  propertyValue: z.number().nullable().optional(),
+  propertyValue: z.coerce.number().nullable().optional(),
   creditLine: z.string().optional(),
   creditReason: z.string().optional(),
   companyDescription: z.string().optional(),
@@ -20,6 +20,8 @@ const schema = z.object({
   observations: z.string().optional(),
   bankId: z.string().optional(),
   bankCommission: z.string().optional(),
+  bankName: z.string().optional(),
+  bankTradingName: z.string().optional(),
 });
 
 const proposalStatusOptions = [
@@ -63,19 +65,19 @@ export default function ProposalNew() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [banks, setBanks] = useState<Array<{id: string, companyName: string, commission: string}>>([]);
+  const [banks, setBanks] = useState<Array<{id: string, companyName: string, tradingName: string, commission: string}>>([]);
   const [client, setClient] = useState<{
     id: string;
     name: string;
     type: 'PF' | 'PJ';
   } | null>(null);
 
-  const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm({
+  const { register, handleSubmit, formState: { errors }, reset, watch, setValue, control } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
-      desiredCredit: 0,
+      desiredCredit: undefined,
       hasProperty: false,
-      propertyValue: null,
+      propertyValue: undefined,
       creditLine: '',
       creditReason: '',
       companyDescription: '',
@@ -83,6 +85,8 @@ export default function ProposalNew() {
       observations: '',
       bankId: '',
       bankCommission: '',
+      bankName: '',
+      bankTradingName: '',
     },
   });
 
@@ -98,6 +102,7 @@ export default function ProposalNew() {
         const banksList = banksSnapshot.docs.map(doc => ({
           id: doc.id,
           companyName: doc.data().companyName,
+          tradingName: doc.data().tradingName || doc.data().companyName,
           commission: doc.data().commission || '',
         }));
         setBanks(banksList);
@@ -115,6 +120,8 @@ export default function ProposalNew() {
       const selectedBank = banks.find(bank => bank.id === selectedBankId);
       if (selectedBank) {
         setValue('bankCommission', selectedBank.commission);
+        setValue('bankName', selectedBank.companyName);
+        setValue('bankTradingName', selectedBank.tradingName);
       }
     }
   }, [selectedBankId, banks, setValue]);
@@ -142,10 +149,22 @@ export default function ProposalNew() {
         const data = docSnap.data();
         console.log("Dados do cliente encontrados:", data);
         
+        // Determinar o nome do cliente com base no tipo (PF ou PJ)
+        let clientName = 'Nome não disponível';
+        let clientType: 'PF' | 'PJ' = data.type || 'PF';
+        
+        if (clientType === 'PF') {
+          clientName = data.name || 'Cliente PF';
+        } else if (clientType === 'PJ') {
+          clientName = data.companyName || data.name || 'Cliente PJ';
+        }
+        
+        console.log(`Cliente processado: ${clientName} (${clientType}) - ID: ${docSnap.id}`);
+        
         setClient({
           id: docSnap.id,
-          name: data.fullName || data.companyName || 'Nome não disponível',
-          type: data.documentType === 'cpf' ? 'PF' : 'PJ',
+          name: clientName,
+          type: clientType,
         });
       } else {
         console.error("Cliente não encontrado no Firestore");
@@ -165,8 +184,25 @@ export default function ProposalNew() {
     try {
       setSaving(true);
       
+      // Garantir que os valores numéricos sejam tratados corretamente
+      const desiredCredit = typeof data.desiredCredit === 'string' 
+        ? parseFloat(data.desiredCredit.replace(/[^\d.,]/g, '').replace(',', '.')) 
+        : data.desiredCredit;
+      
+      const propertyValue = data.hasProperty && data.propertyValue
+        ? (typeof data.propertyValue === 'string' 
+            ? parseFloat(data.propertyValue.replace(/[^\d.,]/g, '').replace(',', '.'))
+            : data.propertyValue)
+        : null;
+      
       // Gerar número da proposta
       const proposalNumber = `PROP-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+      
+      console.log('Dados a serem salvos:', {
+        ...data,
+        desiredCredit,
+        propertyValue
+      });
       
       // Criar a proposta no Firestore
       const proposalData = {
@@ -174,9 +210,9 @@ export default function ProposalNew() {
         clientId,
         clientName: client.name,
         clientType: client.type,
-        desiredCredit: data.desiredCredit,
+        desiredCredit: desiredCredit,
         hasProperty: data.hasProperty,
-        propertyValue: data.hasProperty ? data.propertyValue : null,
+        propertyValue: propertyValue,
         status: 'pending',
         pipelineStatus: 'submitted',
         creditLine: data.creditLine,
@@ -186,6 +222,8 @@ export default function ProposalNew() {
         observations: data.observations,
         bankId: data.bankId,
         bankCommission: data.bankCommission,
+        bankName: data.bankName,
+        bankTradingName: data.bankTradingName,
         createdBy: user?.email || 'sistema',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -197,7 +235,7 @@ export default function ProposalNew() {
       
       // Aguardar um pouco para mostrar a mensagem de sucesso antes de redirecionar
       setTimeout(() => {
-        navigate(`/dashboard/proposals/detail/${docRef.id}`);
+        navigate('/proposals');
       }, 1500);
     } catch (error) {
       console.error('Erro ao criar proposta:', error);
@@ -286,7 +324,9 @@ export default function ProposalNew() {
                 name="desiredCredit"
                 register={register}
                 label="Valor do Crédito Pretendido"
-                error={errors.desiredCredit?.message}
+                error={errors.desiredCredit?.message as string}
+                setValue={setValue}
+                control={control}
               />
 
               <div>
@@ -426,7 +466,9 @@ export default function ProposalNew() {
                   name="propertyValue"
                   register={register}
                   label="Valor do Imóvel"
-                  error={errors.propertyValue?.message}
+                  error={errors.propertyValue?.message as string}
+                  setValue={setValue}
+                  control={control}
                 />
               )}
             </div>

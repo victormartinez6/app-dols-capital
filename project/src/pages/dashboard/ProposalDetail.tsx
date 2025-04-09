@@ -258,183 +258,191 @@ export default function ProposalDetail() {
 
   console.log('Renderizando proposta completa');
   return (
-    <div className="container mx-auto py-6 px-4">
-      <div className="flex items-center mb-6">
-        <button
-          onClick={handleBack}
-          className="mr-4 p-2 hover:bg-gray-800 rounded-full"
-        >
-          <ArrowLeft className="h-5 w-5 text-white" />
-        </button>
-        <h2 className="text-xl font-semibold text-white">Detalhes da Proposta</h2>
-      </div>
-
-      <div className="mb-6">
-        <div className="flex flex-wrap items-center gap-4 mb-4">
-          <h3 className="text-lg font-medium text-white">
-            {proposal.proposalNumber}
-          </h3>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
-            {proposalStatusLabels[proposal.status]}
-          </span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus]}`}>
-            {pipelineStatusLabels[proposal.pipelineStatus]}
-          </span>
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-0">
+        <div className="flex items-center space-x-4">
+          <button 
+            onClick={handleBack} 
+            className="p-2 text-white bg-gray-800 rounded-full hover:bg-gray-700"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h2 className="text-xl md:text-2xl font-bold text-white">Detalhes da Proposta</h2>
         </div>
-        <p className="text-sm text-gray-400">
-          Criada em {format(proposal.createdAt, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-gray-900/50 rounded-lg p-5">
-          <h4 className="text-md font-medium text-white mb-4">Informações do Cliente</h4>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs text-gray-400">Nome do Cliente</p>
-              <p className="text-sm text-white">{proposal.clientName}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Possui Restrição Financeira</p>
-              <p className="text-sm text-white">{proposal.hasRestriction ? 'Sim' : 'Não'}</p>
-            </div>
-            {proposal.companyDescription && (
-              <div>
-                <p className="text-xs text-gray-400">Descrição da Empresa</p>
-                <p className="text-sm text-white">{proposal.companyDescription}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-gray-900/50 rounded-lg p-5">
-          <h4 className="text-md font-medium text-white mb-4">Informações do Crédito</h4>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs text-gray-400">Crédito Pretendido</p>
-              <p className="text-sm text-white">{formatCurrency(proposal.desiredCredit)}</p>
-            </div>
-            {proposal.creditLine && (
-              <div>
-                <p className="text-xs text-gray-400">Linha de Crédito</p>
-                <p className="text-sm text-white">{proposal.creditLine}</p>
-              </div>
-            )}
-            {proposal.creditReason && (
-              <div>
-                <p className="text-xs text-gray-400">Motivo do Crédito</p>
-                <p className="text-sm text-white">{proposal.creditReason}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-gray-900/50 rounded-lg p-5">
-          <h4 className="text-md font-medium text-white mb-4">Informações do Imóvel</h4>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs text-gray-400">Possui Imóvel</p>
-              <p className="text-sm text-white">{proposal.hasProperty ? 'Sim' : 'Não'}</p>
-            </div>
-            {proposal.hasProperty && (
-              <div>
-                <p className="text-xs text-gray-400">Valor do Imóvel</p>
-                <p className="text-sm text-white">{formatCurrency(proposal.propertyValue)}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {proposal.observations && (
-          <div className="bg-gray-900/50 rounded-lg p-5">
-            <h4 className="text-md font-medium text-white mb-4">Observações</h4>
-            <p className="text-sm text-white">{proposal.observations}</p>
+        
+        {isAdmin && proposal && (
+          <div className="w-full sm:flex-1 sm:flex sm:justify-end">
+            <button
+              onClick={() => navigate(`/proposals/edit/${proposal.id}`)}
+              className="w-full sm:w-auto px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700"
+            >
+              Editar Proposta
+            </button>
           </div>
         )}
       </div>
 
-      {isAdmin && proposal && (
-        <div id="observations" className="bg-gray-900/50 rounded-lg p-5 md:col-span-2">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-md font-medium text-white">Observações</h4>
-            <button
-              onClick={handleAddObservation}
-              className="flex items-center text-sm text-blue-400 hover:text-blue-300"
-            >
-              <MessageSquarePlus className="h-4 w-4 mr-1" />
-              Nova Observação
-            </button>
+      {/* Informações Básicas */}
+      <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+          <h3 className="text-lg md:text-xl font-semibold text-white">Informações da Proposta</h3>
+          
+          <div className="flex flex-wrap gap-2">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal?.status || 'pending']}`}>
+              {proposalStatusLabels[proposal?.status || 'pending']}
+            </span>
+            
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal?.pipelineStatus || 'submitted']}`}>
+              {pipelineStatusLabels[proposal?.pipelineStatus || 'submitted']}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium text-gray-400">Número da Proposta</h4>
+              <p className="text-white">{proposal?.proposalNumber}</p>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-400">Cliente</h4>
+              <p className="text-white">
+                {proposal?.clientId ? (
+                  <button 
+                    onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
+                    className="text-blue-400 hover:underline"
+                  >
+                    {proposal.clientName}
+                  </button>
+                ) : (
+                  proposal?.clientName
+                )}
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-400">Data de Criação</h4>
+              <p className="text-white">
+                {proposal?.createdAt && format(proposal.createdAt, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              </p>
+            </div>
           </div>
           
-          {proposal.observationsTimeline && proposal.observationsTimeline.length > 0 ? (
-            <div className="space-y-4">
-              {proposal.observationsTimeline.map((observation, index) => (
-                <div key={observation.id} className="relative pl-6 pb-4">
-                  {/* Linha vertical da timeline */}
-                  {index < proposal.observationsTimeline!.length - 1 && (
-                    <div className="absolute left-2 top-3 bottom-0 w-0.5 bg-gray-700"></div>
-                  )}
-                  
-                  {/* Círculo da timeline */}
-                  <div className="absolute left-0 top-2 h-4 w-4 rounded-full bg-blue-500"></div>
-                  
-                  <div className="bg-gray-800 rounded-lg p-3">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2">
-                      <span className="text-sm font-medium text-white">{observation.createdByName}</span>
-                      <span className="text-xs text-gray-400">
-                        {(() => {
-                          try {
-                            // Verificar se é um objeto com método toDate()
-                            if (observation.createdAt && typeof observation.createdAt === 'object' && 'toDate' in observation.createdAt) {
-                              const firestoreTimestamp = observation.createdAt as { toDate(): Date };
-                              return format(firestoreTimestamp.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                            }
-                            // Verificar se é um objeto Date
-                            else if (observation.createdAt instanceof Date) {
-                              return format(observation.createdAt, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                            }
-                            // Verificar se é um timestamp numérico
-                            else if (typeof observation.createdAt === 'number') {
-                              return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                            }
-                            // Verificar se é uma string ISO
-                            else if (typeof observation.createdAt === 'string') {
-                              return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                            }
-                            // Fallback para data atual
-                            return format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
-                          } catch (error) {
-                            console.error('Erro ao formatar data:', error, observation.createdAt);
-                            return 'Data não disponível';
-                          }
-                        })()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-300 whitespace-pre-wrap">{observation.text}</p>
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium text-gray-400">Crédito Pretendido</h4>
+              <p className="text-white">{formatCurrency(proposal?.desiredCredit || 0)}</p>
             </div>
-          ) : (
-            <p className="text-sm text-gray-400">Nenhuma observação registrada.</p>
-          )}
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-400">Possui Imóvel?</h4>
+              <p className="text-white">{proposal?.hasProperty ? 'Sim' : 'Não'}</p>
+            </div>
+            
+            {proposal?.hasProperty && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Valor do Imóvel</h4>
+                <p className="text-white">{formatCurrency(proposal?.propertyValue || 0)}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Detalhes Adicionais */}
+      {proposal && (proposal.creditLine || proposal.creditReason || proposal.companyDescription) && (
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+          <h3 className="text-lg md:text-xl font-semibold text-white">Detalhes Adicionais</h3>
+          
+          <div className="grid grid-cols-1 gap-4">
+            {proposal.creditLine && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Linha de Crédito</h4>
+                <p className="text-white">{proposal.creditLine}</p>
+              </div>
+            )}
+            
+            {proposal.creditReason && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Motivo do Crédito</h4>
+                <p className="text-white">{proposal.creditReason}</p>
+              </div>
+            )}
+            
+            {proposal.companyDescription && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Descrição da Empresa</h4>
+                <p className="text-white whitespace-pre-wrap">{proposal.companyDescription}</p>
+              </div>
+            )}
+            
+            {proposal.hasRestriction !== undefined && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Possui Restrição?</h4>
+                <p className="text-white">{proposal.hasRestriction ? 'Sim' : 'Não'}</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {isAdmin && proposal && (
-        <div className="flex justify-end">
+      {/* Observações */}
+      <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg md:text-xl font-semibold text-white">Observações</h3>
+          
           <button
-            onClick={() => navigate(`/proposals/edit/${proposal.id}`)}
-            className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700"
+            onClick={handleAddObservation}
+            className="flex items-center text-sm text-blue-400 hover:text-blue-300"
           >
-            Editar Proposta
+            <MessageSquarePlus className="h-4 w-4 mr-1" />
+            Adicionar
           </button>
         </div>
-      )}
+        
+        {proposal?.observationsTimeline && proposal.observationsTimeline.length > 0 ? (
+          <div className="space-y-4">
+            {proposal.observationsTimeline.map((observation) => (
+              <div key={observation.id} className="bg-gray-900 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
+                  <div className="font-medium text-white mb-1 sm:mb-0">{observation.createdByName}</div>
+                  <div className="text-xs text-gray-400">
+                    <span>
+                      {(() => {
+                        try {
+                          if (typeof observation.createdAt === 'object' && 'toDate' in observation.createdAt) {
+                            const firestoreTimestamp = observation.createdAt as { toDate(): Date };
+                            return format(firestoreTimestamp.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          } else if (observation.createdAt instanceof Date) {
+                            return format(observation.createdAt, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          } else if (typeof observation.createdAt === 'number') {
+                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          } else if (typeof observation.createdAt === 'string') {
+                            return format(new Date(observation.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          }
+                          return format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                        } catch (error) {
+                          console.error('Erro ao formatar data:', error, observation.createdAt);
+                          return 'Data não disponível';
+                        }
+                      })()}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-300 whitespace-pre-wrap">{observation.text}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">Nenhuma observação registrada.</p>
+        )}
+      </div>
 
+      {/* Modal de Adicionar Observação */}
       {showObservationModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg p-4 md:p-6 max-w-md w-full">
             <h3 className="text-lg font-medium text-white mb-4">Adicionar Observação</h3>
             <p className="text-gray-300 mb-4">
               Adicione uma observação sobre esta proposta:
@@ -449,17 +457,17 @@ export default function ProposalDetail() {
               />
             </div>
             
-            <div className="flex justify-end space-x-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
               <button
                 onClick={() => setShowObservationModal(false)}
-                className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800"
+                className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800 order-2 sm:order-1"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveObservation}
                 disabled={!observationText.trim()}
-                className={`px-4 py-2 text-white rounded-md ${
+                className={`px-4 py-2 text-white rounded-md order-1 sm:order-2 ${
                   observationText.trim()
                     ? 'bg-blue-600 hover:bg-blue-700'
                     : 'bg-blue-600/50 cursor-not-allowed'

@@ -92,7 +92,7 @@ export default function CurrencyInput({
           const currentValue = control._getWatch(name);
           console.log(`CurrencyInput - Valor atual para ${name} via control:`, currentValue);
           
-          if (currentValue !== undefined) {
+          if (currentValue !== undefined && currentValue !== null) {
             // Garantir que o valor seja um número válido
             const numericValue = formatValueForField(currentValue);
             
@@ -155,7 +155,11 @@ export default function CurrencyInput({
     
     // Atualizar o valor diretamente no formulário
     if (setValue) {
+      // Garantir que o valor seja um número
       setValue(name, numericValue, { shouldValidate: true });
+      
+      // Log para debug
+      console.log(`CurrencyInput - Valor atualizado para ${name}:`, numericValue, typeof numericValue);
     }
   };
 
@@ -177,7 +181,7 @@ export default function CurrencyInput({
         className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm ${className}`}
         placeholder={placeholder || "R$ 0,00"}
         disabled={disabled}
-        value={displayValue || undefined}
+        value={displayValue === "0,00" || displayValue === "0" ? undefined : displayValue}
         onValueChange={handleValueChange}
         onBlur={(e) => {
           // Quando o campo perde o foco, garantir que o valor seja um número válido
@@ -193,6 +197,7 @@ export default function CurrencyInput({
           // Atualizar o valor no formulário
           if (setValue) {
             setValue(name, validValue, { shouldValidate: true });
+            console.log(`CurrencyInput - onBlur - Valor final para ${name}:`, validValue, typeof validValue);
           }
           
           // Chamar o onBlur original

@@ -269,12 +269,12 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
   };
 
   return (
-    <div className="p-6">
-      <h3 className="text-xl font-semibold mb-6">Configurações de Bancos</h3>
+    <div className="p-4 md:p-6">
+      <h3 className="text-xl font-semibold mb-4 md:mb-6">Configurações de Bancos</h3>
       
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
         {/* Dados do Banco */}
-        <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <h4 className="text-lg font-medium text-white">Dados do Banco</h4>
           
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -364,10 +364,10 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
         </div>
         
         {/* Dados de Contato */}
-        <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <h4 className="text-lg font-medium text-white">Dados de Contato</h4>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Nome do Contato */}
             <div className="relative">
               <input
@@ -410,10 +410,10 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
         </div>
         
         {/* Endereço */}
-        <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <h4 className="text-lg font-medium text-white">Endereço</h4>
           
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             {/* CEP com botão de busca */}
             <div className="relative md:col-span-3">
               <div className="flex">
@@ -523,10 +523,10 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
         </div>
         
         {/* E-mails Operacionais */}
-        <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <h4 className="text-lg font-medium text-white">E-mails Operacionais</h4>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* E-mails de Cadastro */}
             <div className="space-y-4">
               {renderEmailFields('registrationEmails', 'E-mails de Cadastro')}

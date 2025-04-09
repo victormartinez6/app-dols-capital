@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Eye, Pencil, AlertCircle, CheckCircle2, Trash2, Building2, User, Search, X, Plus } from 'lucide-react';
+import { Eye, Pencil, AlertCircle, CheckCircle2, Trash2, Building2, User, Search, X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface Registration {
   id: string;
@@ -50,6 +52,19 @@ const registrationStatusColors = {
   documents_pending: 'text-red-400 bg-red-400/10',
 };
 
+// Função auxiliar para formatar datas do Firestore de forma segura
+const formatFirestoreDate = (date: any): string => {
+  if (date instanceof Date) {
+    return format(date, 'dd/MM/yyyy', { locale: ptBR });
+  }
+  
+  if (date && typeof date === 'object' && 'toDate' in date && typeof date.toDate === 'function') {
+    return format(date.toDate(), 'dd/MM/yyyy', { locale: ptBR });
+  }
+  
+  return 'Data desconhecida';
+};
+
 export default function Clients() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [filteredRegistrations, setFilteredRegistrations] = useState<Registration[]>([]);
@@ -66,7 +81,9 @@ export default function Clients() {
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [clientToChangeStatus, setClientToChangeStatus] = useState<string | null>(null);
-  
+  const [pipelineCarouselIndexes, setPipelineCarouselIndexes] = useState<Record<string, number>>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -77,11 +94,67 @@ export default function Clients() {
     applyFilters();
   }, [registrations, nameFilter, typeFilter, statusFilter, pipelineStatusFilter]);
 
+  useEffect(() => {
+    if (registrations.length > 0) {
+      const initialIndexes: Record<string, number> = {};
+      registrations.forEach(reg => {
+        // Define o índice inicial com base no status do pipeline
+        const pipelineStages = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
+        const currentStageIndex = pipelineStages.indexOf(reg.pipelineStatus);
+        initialIndexes[reg.id] = currentStageIndex >= 0 ? currentStageIndex : 0;
+      });
+      setPipelineCarouselIndexes(initialIndexes);
+    }
+  }, [registrations]);
+
+  const navigateCarousel = (registrationId: string, direction: 'prev' | 'next') => {
+    setPipelineCarouselIndexes(prev => {
+      const currentIndex = prev[registrationId] || 0;
+      const newIndex = direction === 'next' 
+        ? (currentIndex + 1) % 5 
+        : (currentIndex - 1 + 5) % 5;
+      return { ...prev, [registrationId]: newIndex };
+    });
+  };
+
+  const pipelineStages = [
+    { key: 'submitted', label: 'Cadastro', color: 'text-blue-400', bgColor: 'bg-blue-400' },
+    { key: 'pre_analysis', label: 'Pré-Análise', color: 'text-yellow-400', bgColor: 'bg-yellow-400' },
+    { key: 'credit', label: 'Crédito', color: 'text-green-400', bgColor: 'bg-green-400' },
+    { key: 'legal', label: 'Jurídico', color: 'text-purple-400', bgColor: 'bg-purple-400' },
+    { key: 'contract', label: 'Contrato', color: 'text-pink-400', bgColor: 'bg-pink-400' }
+  ];
+
   const fetchRegistrations = async () => {
     try {
       setLoading(true);
       const q = query(collection(db, 'registrations'));
       const querySnapshot = await getDocs(q);
+      
+      // Buscar todas as propostas para determinar o status do pipeline correto
+      const proposalsRef = collection(db, 'proposals');
+      const proposalsSnap = await getDocs(proposalsRef);
+      const proposals = proposalsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        clientId: doc.data().clientId || doc.data().userId,
+        pipelineStatus: doc.data().pipelineStatus
+      }));
+      
+      // Criar um mapa de clientId -> pipelineStatus mais avançado
+      const clientPipelineStatus: Record<string, string> = {};
+      proposals.forEach(proposal => {
+        if (!proposal.clientId || !proposal.pipelineStatus) return;
+        
+        // Se o cliente já tem um status e este é mais avançado, não atualizar
+        const currentStatus = clientPipelineStatus[proposal.clientId];
+        const statusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
+        
+        if (!currentStatus || 
+            statusOrder.indexOf(proposal.pipelineStatus) > statusOrder.indexOf(currentStatus)) {
+          clientPipelineStatus[proposal.clientId] = proposal.pipelineStatus;
+        }
+      });
       
       const registrationsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
@@ -90,11 +163,25 @@ export default function Clients() {
         // Atualizar o status com base na presença de documentos
         const status = hasDocuments ? 'complete' : 'documents_pending';
         
+        // Determinar o status do pipeline correto
+        let pipelineStatus = data.pipelineStatus;
+        
+        // Se houver um status mais avançado nas propostas, usar esse
+        if (clientPipelineStatus[doc.id] || clientPipelineStatus[data.userId]) {
+          pipelineStatus = clientPipelineStatus[doc.id] || 
+                           clientPipelineStatus[data.userId];
+        }
+        
+        // Se não houver status definido, usar 'submitted' como padrão
+        if (!pipelineStatus) {
+          pipelineStatus = 'submitted';
+        }
+        
         return {
           id: doc.id,
           ...data,
           status,
-          pipelineStatus: data.pipelineStatus || 'submitted', // Garantir que sempre tenha um status de pipeline
+          pipelineStatus,
           createdAt: data.createdAt?.toDate() || new Date(),
           pendencies: data.pendencies ? data.pendencies.map((p: any) => ({
             ...p,
@@ -112,60 +199,6 @@ export default function Clients() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    const updatePipelineStatusFromProposals = async () => {
-      if (registrations.length === 0) return;
-      
-      try {
-        // Buscar todas as propostas
-        const proposalsRef = collection(db, 'proposals');
-        const proposalsSnap = await getDocs(proposalsRef);
-        const proposals = proposalsSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          clientId: doc.data().clientId || doc.data().userId
-        }));
-        
-        // Criar um mapa de clientId -> pipelineStatus mais recente
-        const clientPipelineStatus = {};
-        proposals.forEach(proposal => {
-          if (!proposal.clientId) return;
-          
-          // Se o cliente já tem um status e este é mais avançado, não atualizar
-          const currentStatus = clientPipelineStatus[proposal.clientId];
-          const statusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
-          
-          if (!currentStatus || 
-              statusOrder.indexOf(proposal.pipelineStatus) > statusOrder.indexOf(currentStatus)) {
-            clientPipelineStatus[proposal.clientId] = proposal.pipelineStatus;
-          }
-        });
-        
-        // Atualizar os registros com os status do pipeline
-        const updatedRegistrations = registrations.map(registration => {
-          if (clientPipelineStatus[registration.id] || clientPipelineStatus[registration.userId]) {
-            return {
-              ...registration,
-              pipelineStatus: clientPipelineStatus[registration.id] || 
-                             clientPipelineStatus[registration.userId] || 
-                             registration.pipelineStatus
-            };
-          }
-          return registration;
-        });
-        
-        if (JSON.stringify(updatedRegistrations) !== JSON.stringify(registrations)) {
-          setRegistrations(updatedRegistrations);
-          setFilteredRegistrations(updatedRegistrations);
-        }
-      } catch (error) {
-        console.error('Erro ao atualizar status do pipeline:', error);
-      }
-    };
-    
-    updatePipelineStatusFromProposals();
-  }, [registrations.length]);
 
   const applyFilters = () => {
     let result = [...registrations];
@@ -368,6 +401,10 @@ export default function Clients() {
     }
   };
 
+  const toggleFilters = () => {
+    setFiltersOpen(!filtersOpen);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -377,12 +414,12 @@ export default function Clients() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold text-white">Clientes</h2>
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0">
+        <h2 className="text-xl md:text-2xl font-semibold text-white">Clientes</h2>
         <button
           onClick={() => setShowNewClientModal(true)}
-          className="flex items-center px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100"
+          className="flex items-center px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100 w-full sm:w-auto justify-center sm:justify-start"
         >
           <Plus size={16} className="mr-2" />
           Novo Cliente
@@ -390,97 +427,112 @@ export default function Clients() {
       </div>
 
       {/* Filtros */}
-      <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4">
-        <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Filtro por nome */}
-          <div>
-            <label htmlFor="nameFilter" className="block text-sm font-medium text-white mb-1">
-              Nome
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                id="nameFilter"
-                value={nameFilter}
-                onChange={(e) => setNameFilter(e.target.value)}
+      <button
+        onClick={toggleFilters}
+        className="flex items-center justify-center w-full py-2 bg-black border border-gray-600 text-white rounded-lg mb-6"
+      >
+        {filtersOpen ? (
+          <X className="h-4 w-4 mr-1" />
+        ) : (
+          <Search className="h-4 w-4 mr-1" />
+        )}
+        <span>{filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}</span>
+      </button>
+
+      {filtersOpen && (
+        <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4">
+          <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Filtro por nome */}
+            <div>
+              <label htmlFor="nameFilter" className="block text-sm font-medium text-white mb-1">
+                Nome
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="nameFilter"
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                  className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Buscar por nome..."
+                />
+                <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+              </div>
+            </div>
+            
+            {/* Filtro por tipo */}
+            <div>
+              <label htmlFor="typeFilter" className="block text-sm font-medium text-white mb-1">
+                Tipo
+              </label>
+              <select
+                id="typeFilter"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value as any)}
                 className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="Buscar por nome..."
-              />
-              <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+              >
+                <option value="all">Todos</option>
+                <option value="PF">Pessoa Física</option>
+                <option value="PJ">Pessoa Jurídica</option>
+              </select>
+            </div>
+            
+            {/* Filtro por status */}
+            <div>
+              <label htmlFor="statusFilter" className="block text-sm font-medium text-white mb-1">
+                Status
+              </label>
+              <select
+                id="statusFilter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">Todos</option>
+                <option value="complete">Cadastro Completo</option>
+                <option value="documents_pending">Cadastro com Pendência</option>
+              </select>
+            </div>
+            
+            {/* Filtro por status do pipeline */}
+            <div>
+              <label htmlFor="pipelineStatusFilter" className="block text-sm font-medium text-white mb-1">
+                Status do Pipeline
+              </label>
+              <select
+                id="pipelineStatusFilter"
+                value={pipelineStatusFilter}
+                onChange={(e) => setPipelineStatusFilter(e.target.value as any)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">Todos</option>
+                <option value="submitted">Cadastro Enviado</option>
+                <option value="pre_analysis">Pré-Análise</option>
+                <option value="credit">Crédito</option>
+                <option value="legal">Jurídico/Imóvel</option>
+                <option value="contract">Em Contrato</option>
+              </select>
             </div>
           </div>
           
-          {/* Filtro por tipo */}
-          <div>
-            <label htmlFor="typeFilter" className="block text-sm font-medium text-white mb-1">
-              Tipo
-            </label>
-            <select
-              id="typeFilter"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as any)}
-              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          {/* Botão para limpar filtros */}
+          {(nameFilter || typeFilter !== 'all' || statusFilter !== 'all' || pipelineStatusFilter !== 'all') && (
+            <button
+              onClick={resetFilters}
+              className="flex items-center text-sm text-white hover:text-blue-300"
             >
-              <option value="all">Todos</option>
-              <option value="PF">Pessoa Física</option>
-              <option value="PJ">Pessoa Jurídica</option>
-            </select>
-          </div>
-          
-          {/* Filtro por status */}
-          <div>
-            <label htmlFor="statusFilter" className="block text-sm font-medium text-white mb-1">
-              Status
-            </label>
-            <select
-              id="statusFilter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="all">Todos</option>
-              <option value="complete">Cadastro Completo</option>
-              <option value="documents_pending">Cadastro com Pendência</option>
-            </select>
-          </div>
-          
-          {/* Filtro por status do pipeline */}
-          <div>
-            <label htmlFor="pipelineStatusFilter" className="block text-sm font-medium text-white mb-1">
-              Status do Pipeline
-            </label>
-            <select
-              id="pipelineStatusFilter"
-              value={pipelineStatusFilter}
-              onChange={(e) => setPipelineStatusFilter(e.target.value as any)}
-              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="all">Todos</option>
-              <option value="submitted">Cadastro Enviado</option>
-              <option value="pre_analysis">Pré-Análise</option>
-              <option value="credit">Crédito</option>
-              <option value="legal">Jurídico/Imóvel</option>
-              <option value="contract">Em Contrato</option>
-            </select>
-          </div>
+              <X className="h-4 w-4 mr-1" />
+              Limpar filtros
+            </button>
+          )}
         </div>
-        
-        {/* Botão para limpar filtros */}
-        {(nameFilter || typeFilter !== 'all' || statusFilter !== 'all' || pipelineStatusFilter !== 'all') && (
-          <button
-            onClick={resetFilters}
-            className="flex items-center text-sm text-white hover:text-blue-300"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Limpar filtros
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="bg-black border border-gray-700 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Versão para Desktop - Tabela */}
+        <div className="hidden md:block">
           <table className="min-w-full divide-y divide-gray-700">
             <thead>
               <tr>
@@ -512,7 +564,7 @@ export default function Clients() {
                 filteredRegistrations.map((registration) => (
                   <tr key={registration.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                      {registration.createdAt.toLocaleDateString('pt-BR')}
+                      {formatFirestoreDate(registration.createdAt)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
                       {registration.type === 'PJ' ? registration.companyName : registration.name}
@@ -613,6 +665,159 @@ export default function Clients() {
             </tbody>
           </table>
         </div>
+
+        {/* Versão para Mobile - Cards */}
+        <div className="block md:hidden space-y-4">
+          {filteredRegistrations.length > 0 ? (
+            filteredRegistrations.map((registration) => (
+              <div key={registration.id} className="bg-black border border-gray-700 rounded-lg p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="text-lg font-medium text-white truncate max-w-[200px]">
+                      {registration.type === 'PJ' ? registration.companyName : registration.name}
+                    </h3>
+                    <p className="text-sm text-gray-400">
+                      {registration.email || registration.partnerEmail || 'Sem e-mail'}
+                    </p>
+                  </div>
+                  <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                    registration.type === 'PJ' ? 'bg-blue-400/10 text-blue-400' : 'bg-green-400/10 text-green-400'
+                  }`}>
+                    {registration.type === 'PJ' ? 'PJ' : 'PF'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="flex flex-col">
+                    <span className="text-sm text-white">Data de Cadastro:</span>
+                    <span className="text-sm text-white">
+                      {formatFirestoreDate(registration.createdAt)}
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-col">
+                    <span className="text-sm text-white">Status do Cliente:</span>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      registrationStatusColors[registration.status]
+                    }`}>
+                      {registrationStatusLabels[registration.status]}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <span className="text-sm text-white">Status do Pipeline:</span>
+                  <div className="mt-1 bg-gray-900 rounded-md p-2">
+                    <div className="flex items-center justify-between">
+                      <button 
+                        onClick={() => navigateCarousel(registration.id, 'prev')}
+                        className="text-gray-400 hover:text-white transition-colors"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      
+                      <div className="flex-1 mx-2">
+                        {pipelineStages.map((stage, index) => {
+                          const isCurrentStage = registration.pipelineStatus === stage.key;
+                          const isActiveInCarousel = (pipelineCarouselIndexes[registration.id] || 0) === index;
+                          
+                          return isActiveInCarousel && (
+                            <div key={stage.key} className="text-center">
+                              <div className={`h-1.5 ${isCurrentStage ? stage.bgColor : 'bg-gray-600'} rounded-full mb-2 mx-auto w-3/4`}></div>
+                              <span className={`text-sm font-medium ${isCurrentStage ? stage.color : 'text-gray-500'}`}>{stage.label}</span>
+                              {isCurrentStage && (
+                                <div className={`mt-1 mx-auto w-2 h-2 rounded-full ${stage.bgColor}`}></div>
+                              )}
+                              <div className="flex justify-center mt-2 space-x-1">
+                                {pipelineStages.map((_, dotIndex) => (
+                                  <div 
+                                    key={dotIndex} 
+                                    className={`w-1.5 h-1.5 rounded-full ${dotIndex === index ? 'bg-white' : 'bg-gray-600'}`}
+                                  ></div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      <button 
+                        onClick={() => navigateCarousel(registration.id, 'next')}
+                        className="text-gray-400 hover:text-white transition-colors"
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center border-t border-gray-700 pt-3">
+                  <div className="text-sm text-gray-400">
+                    {registration.pendencies && registration.pendencies.length > 0 
+                      ? `${registration.pendencies.length} pendência(s)` 
+                      : 'Nenhuma pendência'}
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <button
+                      onClick={() => handleViewRegistration(registration.id)}
+                      className="text-cyan-400 hover:text-cyan-300 hover:drop-shadow-[0_0_4px_rgba(34,211,238,0.6)] transition-all"
+                      title="Visualizar"
+                    >
+                      <Eye className="h-5 w-5" />
+                    </button>
+                    <button
+                      onClick={() => handleEditRegistration(registration)}
+                      className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
+                      title="Editar"
+                    >
+                      <Pencil className="h-5 w-5" />
+                    </button>
+                    {registration.status === 'complete' && (
+                      <button
+                        onClick={() => {
+                          setRegistrationForPendency(registration.id);
+                          setShowPendencyModal(true);
+                        }}
+                        className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
+                        title="Gerar Pendência"
+                      >
+                        <AlertCircle className="h-5 w-5" />
+                      </button>
+                    )}
+                    
+                    {registration.status === 'documents_pending' && (
+                      <button
+                        onClick={() => {
+                          setClientToChangeStatus(registration.id);
+                          updateClientStatus('complete');
+                        }}
+                        className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
+                        title="Marcar como Completo"
+                      >
+                        <CheckCircle2 className="h-5 w-5" />
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={() => {
+                        setRegistrationToDelete(registration.id);
+                        setShowDeleteModal(true);
+                      }}
+                      className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
+                      title="Excluir"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center text-white p-4 bg-black border border-gray-700 rounded-lg">
+              Nenhum cliente encontrado com os filtros selecionados.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Modal de confirmação de exclusão */}
@@ -687,7 +892,7 @@ export default function Clients() {
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <p className="text-xs text-white">
-                              {pendency.createdAt.toLocaleDateString('pt-BR')} às {pendency.createdAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              {formatFirestoreDate(pendency.createdAt)}
                             </p>
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
                               pendency.resolved 

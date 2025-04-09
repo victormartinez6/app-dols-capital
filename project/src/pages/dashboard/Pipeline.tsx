@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, doc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { MoreHorizontal, Eye, Pencil, X, Search } from 'lucide-react';
+import { Eye, Pencil, X, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import '../../styles/pipeline.css';
 
 interface Proposal {
   id: string;
@@ -44,23 +45,34 @@ const pipelineStatusLabels = {
 };
 
 const pipelineStatusColors = {
-  submitted: 'bg-blue-600 border-blue-600',
-  pre_analysis: 'bg-indigo-600 border-indigo-600',
-  credit: 'bg-teal-600 border-teal-600',
-  legal: 'bg-purple-600 border-purple-600',
-  contract: 'bg-orange-600 border-orange-600',
-  closed: 'bg-emerald-600 border-emerald-600',
-  lost: 'bg-red-600 border-red-600',
+  submitted: 'bg-blue-500 border-blue-500',
+  pre_analysis: 'bg-indigo-500 border-indigo-500',
+  credit: 'bg-green-500 border-green-500',
+  legal: 'bg-purple-500 border-purple-500',
+  contract: 'bg-orange-500 border-orange-500',
+  closed: 'bg-emerald-500 border-emerald-500',
+  lost: 'bg-red-500 border-red-500',
+};
+
+// Cores para os badges de observações
+const pipelineStatusBadgeColors = {
+  submitted: 'bg-blue-500',
+  pre_analysis: 'bg-indigo-500',
+  credit: 'bg-green-500',
+  legal: 'bg-purple-500',
+  contract: 'bg-orange-500',
+  closed: 'bg-emerald-500',
+  lost: 'bg-red-500',
 };
 
 const pipelineStatusHeaderColors = {
-  submitted: 'bg-blue-600 text-white',
-  pre_analysis: 'bg-indigo-600 text-white',
-  credit: 'bg-teal-600 text-white',
-  legal: 'bg-purple-600 text-white',
-  contract: 'bg-orange-600 text-white',
-  closed: 'bg-emerald-600 text-white',
-  lost: 'bg-red-600 text-white',
+  submitted: 'bg-gray-800 text-white border-t-4 border-t-blue-500',
+  pre_analysis: 'bg-gray-800 text-white border-t-4 border-t-indigo-500',
+  credit: 'bg-gray-800 text-white border-t-4 border-t-green-500',
+  legal: 'bg-gray-800 text-white border-t-4 border-t-purple-500',
+  contract: 'bg-gray-800 text-white border-t-4 border-t-orange-500',
+  closed: 'bg-gray-800 text-white border-t-4 border-t-emerald-500',
+  lost: 'bg-gray-800 text-white border-t-4 border-t-red-500',
 };
 
 const pipelineStatusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract', 'closed', 'lost'];
@@ -69,24 +81,44 @@ export default function Pipeline() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [filteredProposals, setFilteredProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [bankFilter, setbankFilter] = useState('all');
   const [draggedProposal, setDraggedProposal] = useState<string | null>(null);
-  const [showDropdown, setShowDropdown] = useState<string | null>(null);
+  const [banksList, setBanksList] = useState<{id: string, name: string}[]>([]);
   const [showObservationsModal, setShowObservationsModal] = useState(false);
   const [selectedObservations, setSelectedObservations] = useState<Proposal['observationsTimeline']>([]);
   const [selectedProposalNumber, setSelectedProposalNumber] = useState('');
-
-  // Filtros
-  const [searchFilter, setSearchFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | Proposal['pipelineStatus']>('all');
-  const [bankFilter, setbankFilter] = useState<string>('all');
-  const [banksList, setBanksList] = useState<{id: string, name: string}[]>([]);
+  const [currentColumnIndex, setCurrentColumnIndex] = useState(0);
 
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // Estado para controlar se o acordeon de filtros está aberto ou fechado
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Função para alternar o estado do acordeon
+  const toggleFilters = () => {
+    setFiltersOpen(!filtersOpen);
+  };
+
   useEffect(() => {
     fetchProposals();
     fetchBanks();
+    
+    // Adiciona uma classe específica para a página de Pipeline
+    const mainElement = document.querySelector('main');
+    if (mainElement) {
+      mainElement.classList.add('pipeline-page');
+    }
+    
+    // Limpa ao desmontar o componente
+    return () => {
+      const mainElement = document.querySelector('main');
+      if (mainElement) {
+        mainElement.classList.remove('pipeline-page');
+      }
+    };
   }, [user]);
 
   useEffect(() => {
@@ -281,31 +313,92 @@ export default function Pipeline() {
     return filteredProposals.filter(proposal => proposal.pipelineStatus === status);
   };
 
+  // Função para mudar de coluna
+  const handleColumnChange = (direction: 'prev' | 'next') => {
+    if (direction === 'prev' && currentColumnIndex > 0) {
+      setCurrentColumnIndex(currentColumnIndex - 1);
+    } else if (direction === 'next' && currentColumnIndex < pipelineStatusOrder.length - 1) {
+      setCurrentColumnIndex(currentColumnIndex + 1);
+    }
+  };
+
+  // Estado para controlar se estamos no cliente ou no servidor
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Efeito para verificar o tamanho da tela e aplicar a transformação
+  useEffect(() => {
+    // Verificar se estamos no cliente
+    setIsMobile(window.innerWidth <= 768);
+    
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+      const columnsElement = document.querySelector('.pipeline-columns');
+      if (columnsElement && window.innerWidth <= 768) {
+        (columnsElement as HTMLElement).style.transform = `translateX(-${currentColumnIndex * 100}%)`;
+      } else if (columnsElement) {
+        (columnsElement as HTMLElement).style.transform = '';
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Aplicar ao montar o componente
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [currentColumnIndex]);
+
+  // Efeito para atualizar a transformação quando o índice da coluna muda
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const columnsElement = document.querySelector('.pipeline-columns');
+      if (columnsElement && isMobile) {
+        (columnsElement as HTMLElement).style.transform = `translateX(-${currentColumnIndex * 100}%)`;
+      }
+    }
+  }, [currentColumnIndex, isMobile]);
+
+  // Resetar o índice da coluna quando os filtros são aplicados
+  useEffect(() => {
+    setCurrentColumnIndex(0);
+  }, [filteredProposals]);
+
   return (
-    <div className="dark-card rounded-lg p-6">
+    <div className="w-full box-border">
       <h2 className="text-2xl font-semibold text-white mb-6">Pipeline</h2>
 
       {/* Filtros */}
-      <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4 mb-6">
-        <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
+      <div className={`bg-black rounded-lg p-4 mb-6 w-full overflow-hidden border border-gray-800 box-border ${filtersOpen ? 'block' : 'hidden'}`}>
+        <h3 className="text-lg font-medium text-white mb-4">Filtros</h3>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
+          {/* Filtro por data */}
+          <div>
+            <label htmlFor="dateFilter" className="block text-sm font-medium text-white mb-1">
+              Data da Proposta
+            </label>
+            <input
+              type="text"
+              id="dateFilter"
+              placeholder="dd/mm/aaaa"
+              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              disabled
+            />
+          </div>
+          
           {/* Filtro por texto */}
           <div>
             <label htmlFor="searchFilter" className="block text-sm font-medium text-white mb-1">
               Nome do Cliente
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                id="searchFilter"
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="Buscar por cliente ou número..."
-              />
-              <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
-            </div>
+            <input
+              type="text"
+              id="searchFilter"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="Buscar por nome..."
+              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
           
           {/* Filtro por status */}
@@ -328,13 +421,13 @@ export default function Pipeline() {
             </select>
           </div>
           
-          {/* Filtro por banco */}
+          {/* Filtro por pipeline */}
           <div>
-            <label htmlFor="bankFilter" className="block text-sm font-medium text-white mb-1">
-              Banco
+            <label htmlFor="pipelineFilter" className="block text-sm font-medium text-white mb-1">
+              Status do Pipeline
             </label>
             <select
-              id="bankFilter"
+              id="pipelineFilter"
               value={bankFilter}
               onChange={(e) => setbankFilter(e.target.value)}
               className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -353,7 +446,7 @@ export default function Pipeline() {
         {(searchFilter || statusFilter !== 'all' || bankFilter !== 'all') && (
           <button
             onClick={resetFilters}
-            className="flex items-center text-sm text-white hover:text-blue-300"
+            className="flex items-center mt-3 text-sm text-white hover:text-blue-300"
           >
             <X className="h-4 w-4 mr-1" />
             Limpar filtros
@@ -361,166 +454,200 @@ export default function Pipeline() {
         )}
       </div>
 
+      <button
+        onClick={toggleFilters}
+        className="flex items-center justify-center w-full py-2 bg-black border border-gray-600 text-white rounded-lg mb-6"
+      >
+        {filtersOpen ? (
+          <X className="h-4 w-4 mr-1" />
+        ) : (
+          <Search className="h-4 w-4 mr-1" />
+        )}
+        <span>{filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}</span>
+      </button>
+
       {loading ? (
         <div className="flex justify-center items-center py-16">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
         </div>
       ) : (
-        <div className="overflow-x-auto pb-4">
-          <div className="grid grid-flow-col auto-cols-[280px] gap-4 min-w-full">
-            {pipelineStatusOrder.map((status) => (
-              <div 
-                key={status}
-                className="flex flex-col h-full"
-              >
-                <div className={`rounded-t-lg px-3 py-3 flex items-center justify-between ${pipelineStatusHeaderColors[status as keyof typeof pipelineStatusHeaderColors]}`}>
-                  <h3 className="text-md font-medium">
-                    {pipelineStatusLabels[status as keyof typeof pipelineStatusLabels]}
-                  </h3>
-                  <span className="text-xs bg-black/30 rounded-full px-2 py-1">
-                    {getProposalsByStatus(status as Proposal['pipelineStatus']).length}
-                  </span>
-                </div>
-
-                <div 
-                  className={`flex-1 bg-gray-800 rounded-b-lg p-3 min-h-[500px] max-h-[70vh] overflow-y-auto border-x border-b ${
-                    draggedProposal ? 'border-2 border-dashed' : 'border-gray-700'
+        <div className="relative">
+          {/* Título e navegação mobile */}
+          {isMobile && (
+            <div className="flex justify-between items-center mb-4 px-4">
+              <h3 className="text-lg font-medium text-white text-left">
+                {pipelineStatusLabels[pipelineStatusOrder[currentColumnIndex] as keyof typeof pipelineStatusLabels]}
+              </h3>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleColumnChange('prev')}
+                  disabled={currentColumnIndex === 0}
+                  className={`p-1 rounded-full ${
+                    currentColumnIndex === 0 ? 'text-gray-600' : 'text-white hover:bg-gray-700'
                   }`}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, status as Proposal['pipelineStatus'])}
                 >
-                  {getProposalsByStatus(status as Proposal['pipelineStatus']).length > 0 ? (
-                    <div className="space-y-3">
-                      {getProposalsByStatus(status as Proposal['pipelineStatus']).map((proposal) => (
-                        <div 
-                          key={proposal.id}
-                          className={`bg-gray-900 rounded-lg shadow-md overflow-hidden cursor-move border-l-4 ${
-                            pipelineStatusColors[proposal.pipelineStatus].split(' ')[1]
-                          }`}
-                          draggable
-                          onDragStart={() => handleDragStart(proposal.id)}
-                        >
-                          <div className="p-3">
-                            <div className="flex justify-between items-start mb-3">
-                              <span className="text-xs font-medium px-2 py-1 rounded bg-black/30 text-white">
-                                {proposal.proposalNumber}
-                              </span>
-                              <div className="relative">
-                                <button
-                                  onClick={() => setShowDropdown(showDropdown === proposal.id ? null : proposal.id)}
-                                  className="p-1 rounded-full hover:bg-gray-700"
-                                >
-                                  <MoreHorizontal className="h-4 w-4 text-gray-300" />
-                                </button>
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <div className="flex space-x-1">
+                  {pipelineStatusOrder.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentColumnIndex(index)}
+                      className={`h-2 w-2 rounded-full ${
+                        currentColumnIndex === index ? 'bg-blue-500' : 'bg-gray-600'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => handleColumnChange('next')}
+                  disabled={currentColumnIndex === pipelineStatusOrder.length - 1}
+                  className={`p-1 rounded-full ${
+                    currentColumnIndex === pipelineStatusOrder.length - 1
+                      ? 'text-gray-600'
+                      : 'text-white hover:bg-gray-700'
+                  }`}
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Container do Pipeline */}
+          <div className="pipeline-container">
+            <div className="pipeline-scroll">
+              <div className="pipeline-columns">
+                {pipelineStatusOrder.map((status) => (
+                  <div 
+                    key={status}
+                    className="pipeline-column"
+                  >
+                    {/* Título da coluna - Visível apenas em desktop */}
+                    <div className={`md:block hidden rounded-t-lg px-4 py-3 flex items-center justify-between ${pipelineStatusHeaderColors[status as keyof typeof pipelineStatusHeaderColors]}`}>
+                      <h3 className="text-md font-medium flex items-center">
+                        {pipelineStatusLabels[status as keyof typeof pipelineStatusLabels]}
+                        <span className="ml-2 text-xs bg-black/30 rounded-full px-2 py-1">
+                          {getProposalsByStatus(status as Proposal['pipelineStatus']).length}
+                        </span>
+                      </h3>
+                    </div>
 
-                                {showDropdown === proposal.id && (
-                                  <div className="absolute right-0 mt-1 w-36 bg-black rounded-md shadow-lg z-10 border border-gray-700">
-                                    <div className="py-1">
-                                      <button
-                                        onClick={() => {
-                                          navigate(`/proposals/detail/${proposal.id}`);
-                                          setShowDropdown(null);
-                                        }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-gray-700/70 transition-all"
-                                      >
-                                        <Eye className="h-4 w-4 mr-2" />
-                                        Ver Proposta
-                                      </button>
-
-                                      <button
-                                        onClick={() => {
-                                          navigate(`/proposals/edit/${proposal.id}`);
-                                          setShowDropdown(null);
-                                        }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-yellow-400 hover:text-yellow-300 hover:bg-gray-700/70 transition-all"
-                                      >
-                                        <Pencil className="h-4 w-4 mr-2" />
-                                        Editar
-                                      </button>
-
+                    <div 
+                      className={`flex-1 bg-gray-800/30 rounded-lg md:rounded-b-lg p-4 min-h-[calc(100vh-550px)] max-h-[calc(100vh-550px)] overflow-y-auto ${
+                        draggedProposal ? 'border-2 border-dashed border-blue-400' : ''
+                      }`}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, status as Proposal['pipelineStatus'])}
+                    >
+                      {getProposalsByStatus(status as Proposal['pipelineStatus']).length > 0 ? (
+                        <div className="space-y-4">
+                          {getProposalsByStatus(status as Proposal['pipelineStatus']).map((proposal) => (
+                            <div 
+                              key={proposal.id} 
+                              className="bg-gray-900 rounded-lg shadow-md overflow-hidden cursor-move mb-4 w-full box-border border border-gray-800 hover:shadow-lg transition-all"
+                              draggable
+                              onDragStart={() => handleDragStart(proposal.id)}
+                            >
+                              {/* Indicador de status no topo do cartão */}
+                              <div className={`h-1.5 w-full ${pipelineStatusColors[proposal.pipelineStatus].split(' ')[0]}`}></div>
+                              
+                              <div className="p-4 w-full box-border mobile-card-content">
+                                <div className="flex justify-between items-start mb-3">
+                                  <span className="text-xs font-medium px-2 py-1 rounded bg-gray-800 text-white border border-gray-700 truncate max-w-[60%] proposal-number">
+                                    {proposal.proposalNumber}
+                                  </span>
+                                  <div className="flex space-x-2 card-actions">
+                                    <button
+                                      onClick={() => navigate(`/proposals/detail/${proposal.id}`)}
+                                      className="p-1.5 rounded-full hover:bg-gray-700 text-white"
+                                      title="Editar proposta"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </button>
+                                    
+                                    {proposal.observationsTimeline && proposal.observationsTimeline.length > 0 && (
                                       <button
                                         onClick={() => {
                                           setSelectedObservations(proposal.observationsTimeline || []);
                                           setSelectedProposalNumber(proposal.proposalNumber);
                                           setShowObservationsModal(true);
-                                          setShowDropdown(null);
                                         }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-purple-400 hover:text-purple-300 hover:bg-gray-700/70 transition-all"
+                                        className="p-1.5 rounded-full hover:bg-gray-700 text-white relative"
+                                        title="Ver observações"
                                       >
-                                        <Eye className="h-4 w-4 mr-2" />
-                                        Observações
+                                        <Eye className="h-4 w-4" />
+                                        <span className={`absolute -top-1 -right-1 ${pipelineStatusBadgeColors[proposal.pipelineStatus]} text-white text-xs rounded-full h-4 w-4 flex items-center justify-center`}>
+                                          {proposal.observationsTimeline.length}
+                                        </span>
                                       </button>
-                                    </div>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                <h4 className="font-semibold text-white mb-2 truncate">
+                                  <button 
+                                    onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
+                                    className="hover:text-blue-400 transition-colors text-left"
+                                  >
+                                    {proposal.clientName}
+                                  </button>
+                                </h4>
+                                
+                                {proposal.bankName && (
+                                  <div className="mb-2">
+                                    <span className="bg-gray-800 px-2 py-1 rounded text-xs text-gray-300 inline-block truncate max-w-full">
+                                      {proposal.bankName}
+                                    </span>
                                   </div>
                                 )}
-                              </div>
-                            </div>
-                            
-                            <h4 className="font-semibold text-white mb-2">
-                              <button 
-                                onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
-                                className="hover:text-blue-400 transition-colors text-left"
-                              >
-                                {proposal.clientName}
-                              </button>
-                            </h4>
-                            
-                            <div className="space-y-2 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Data:</span>
-                                <span className="text-white">
-                                  {(() => {
-                                    try {
-                                      if (proposal.createdAt && typeof proposal.createdAt === 'object' && 'toDate' in proposal.createdAt) {
-                                        const date = proposal.createdAt.toDate();
-                                        return format(date, 'dd/MM/yyyy', { locale: ptBR });
+                                
+                                <div className="flex justify-between items-center">
+                                  <span className="text-blue-400 font-medium truncate">
+                                    R$ {formatCurrency(proposal.desiredCredit)}
+                                  </span>
+                                  <div className="text-xs text-gray-400">
+                                    {(() => {
+                                      try {
+                                        // Verificar se é um objeto com método toDate()
+                                        if (proposal.createdAt && typeof proposal.createdAt === 'object' && 'toDate' in proposal.createdAt) {
+                                          const firestoreTimestamp = proposal.createdAt as { toDate(): Date };
+                                          return format(firestoreTimestamp.toDate(), 'dd/MM/yyyy', { locale: ptBR });
+                                        }
+                                        // Verificar se é um objeto Date
+                                        else if (proposal.createdAt instanceof Date) {
+                                          return format(proposal.createdAt, 'dd/MM/yyyy', { locale: ptBR });
+                                        }
+                                        // Verificar se é um timestamp numérico
+                                        else if (typeof proposal.createdAt === 'number') {
+                                          return format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR });
+                                        }
+                                        // Verificar se é uma string ISO
+                                        else if (typeof proposal.createdAt === 'string') {
+                                          return format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR });
+                                        }
+                                        return 'Data não disponível';
+                                      } catch (error) {
+                                        console.error('Erro ao formatar data:', error, proposal.createdAt);
+                                        return 'Data não disponível';
                                       }
-                                      return 'Data não disponível';
-                                    } catch (error) {
-                                      console.error('Erro ao formatar data:', error);
-                                      return 'Data não disponível';
-                                    }
-                                  })()}
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Crédito:</span>
-                                <span className="text-white">{formatCurrency(proposal.desiredCredit)}</span>
-                              </div>
-                              {proposal.bankName && (
-                                <div className="flex justify-between">
-                                  <span className="text-gray-400">Banco:</span>
-                                  <span className="text-white">{proposal.bankName}</span>
+                                    })()}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                            
-                            {proposal.observationsTimeline && proposal.observationsTimeline.length > 0 && (
-                              <div className="mt-3 pt-2 border-t border-gray-700">
-                                <button
-                                  onClick={() => {
-                                    setSelectedObservations(proposal.observationsTimeline || []);
-                                    setSelectedProposalNumber(proposal.proposalNumber);
-                                    setShowObservationsModal(true);
-                                  }}
-                                  className="text-xs text-purple-400 hover:text-purple-300"
-                                >
-                                  {proposal.observationsTimeline.length} observação(ões)
-                                </button>
                               </div>
-                            )}
-                          </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <p className="text-gray-500 text-sm">Nenhuma proposta</p>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-gray-500 text-sm">Nenhuma proposta</p>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
       )}

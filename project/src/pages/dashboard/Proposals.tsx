@@ -90,6 +90,14 @@ export default function Proposals() {
   const [filteredClients, setFilteredClients] = useState<{ id: string; name: string; type: 'PF' | 'PJ' }[]>([]);
   const [selectedClient, setSelectedClient] = useState<{ id: string; name: string; type: 'PF' | 'PJ' } | null>(null);
   const [banks, setBanks] = useState<{ id: string; companyName: string; tradingName: string; commission: string }[]>([]);
+  
+  // Estado para controlar se o acordeon de filtros está aberto ou fechado
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Função para alternar o estado do acordeon
+  const toggleFilters = () => {
+    setFiltersOpen(!filtersOpen);
+  };
 
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -143,58 +151,103 @@ export default function Proposals() {
   const fetchProposals = async () => {
     try {
       setLoading(true);
-      let q;
+      
+      // Buscar todos os bancos primeiro para ter os dados completos
+      const banksCollection = collection(db, 'banks');
+      const banksSnapshot = await getDocs(banksCollection);
+      const banksMap = new Map();
+      
+      banksSnapshot.docs.forEach(doc => {
+        const bankData = doc.data();
+        banksMap.set(doc.id, {
+          id: doc.id,
+          companyName: bankData.companyName || '',
+          tradingName: bankData.tradingName || bankData.companyName || '',
+          commission: bankData.commission || ''
+        });
+      });
+      
+      console.log('Bancos carregados:', banksMap.size);
       
       // Se o usuário for cliente, mostrar apenas suas propostas
       if (user?.role === 'client') {
-        q = query(collection(db, 'proposals'), where('userId', '==', user.id));
+        const q = query(collection(db, 'proposals'), where('userId', '==', user.id));
+        const querySnapshot = await getDocs(q);
+        const proposalsData = await Promise.all(querySnapshot.docs.map(async doc => {
+          const data = doc.data();
+          
+          // Buscar dados do banco se houver bankId
+          let bankName = data.bankName || '';
+          let bankTradingName = data.bankTradingName || '';
+          
+          if (data.bankId && banksMap.has(data.bankId)) {
+            const bankData = banksMap.get(data.bankId);
+            bankName = bankData.companyName;
+            bankTradingName = bankData.tradingName;
+          }
+          
+          return {
+            id: doc.id,
+            proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
+            clientName: data.clientName || 'Nome não disponível',
+            clientId: data.clientId || '',
+            desiredCredit: data.desiredCredit || 0,
+            hasProperty: data.hasProperty || false,
+            propertyValue: data.propertyValue || 0,
+            status: data.status || 'pending',
+            pipelineStatus: data.pipelineStatus || 'submitted',
+            createdAt: data.createdAt?.toDate() || new Date(),
+            userId: data.userId || '',
+            creditLine: data.creditLine || '',
+            creditReason: data.creditReason || '',
+            bankId: data.bankId || '',
+            bankName: bankName,
+            bankTradingName: bankTradingName,
+            observationsTimeline: data.observationsTimeline || [],
+          };
+        })) as Proposal[];
+        setProposals(proposalsData);
+        setFilteredProposals(proposalsData);
       } else {
         // Se for gerente ou admin, mostrar todas as propostas
-        q = query(collection(db, 'proposals'));
-      }
-      
-      const querySnapshot = await getDocs(q);
-      
-      // Usar a lista de bancos já carregada
-      const banksList = banks;
-      
-      const proposalsData = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        
-        // Encontrar o banco correspondente
-        let bankName = "Não informado";
-        let bankTradingName = "Não informado";
-        if (data.bankId) {
-          const bank = banksList.find(b => b.id === data.bankId);
-          if (bank) {
-            bankName = bank.companyName;
-            bankTradingName = bank.tradingName;
+        const q = query(collection(db, 'proposals'));
+        const querySnapshot = await getDocs(q);
+        const proposalsData = await Promise.all(querySnapshot.docs.map(async doc => {
+          const data = doc.data();
+          
+          // Buscar dados do banco se houver bankId
+          let bankName = data.bankName || '';
+          let bankTradingName = data.bankTradingName || '';
+          
+          if (data.bankId && banksMap.has(data.bankId)) {
+            const bankData = banksMap.get(data.bankId);
+            bankName = bankData.companyName;
+            bankTradingName = bankData.tradingName;
           }
-        }
-        
-        return {
-          id: doc.id,
-          proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
-          clientName: data.clientName || 'Nome não disponível',
-          clientId: data.clientId || '',
-          desiredCredit: data.desiredCredit || 0,
-          hasProperty: data.hasProperty || false,
-          propertyValue: data.propertyValue || 0,
-          status: data.status || 'pending',
-          pipelineStatus: data.pipelineStatus || 'submitted',
-          createdAt: data.createdAt?.toDate() || new Date(),
-          userId: data.userId || '',
-          creditLine: data.creditLine || '',
-          creditReason: data.creditReason || '',
-          bankId: data.bankId || '',
-          bankName: bankName,
-          bankTradingName: bankTradingName,
-          observationsTimeline: data.observationsTimeline || [],
-        };
-      }) as Proposal[];
-
-      setProposals(proposalsData);
-      setFilteredProposals(proposalsData);
+          
+          return {
+            id: doc.id,
+            proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
+            clientName: data.clientName || 'Nome não disponível',
+            clientId: data.clientId || '',
+            desiredCredit: data.desiredCredit || 0,
+            hasProperty: data.hasProperty || false,
+            propertyValue: data.propertyValue || 0,
+            status: data.status || 'pending',
+            pipelineStatus: data.pipelineStatus || 'submitted',
+            createdAt: data.createdAt?.toDate() || new Date(),
+            userId: data.userId || '',
+            creditLine: data.creditLine || '',
+            creditReason: data.creditReason || '',
+            bankId: data.bankId || '',
+            bankName: bankName,
+            bankTradingName: bankTradingName,
+            observationsTimeline: data.observationsTimeline || [],
+          };
+        })) as Proposal[];
+        setProposals(proposalsData);
+        setFilteredProposals(proposalsData);
+      }
     } catch (error) {
       console.error('Erro ao buscar propostas:', error);
     } finally {
@@ -236,22 +289,50 @@ export default function Proposals() {
 
   const fetchClients = async () => {
     try {
+      console.log('Iniciando busca de clientes...');
+      setFilteredClients([]); // Limpa a lista enquanto carrega
+      
+      // Buscar todos os registros completos, sem filtro de status para garantir que encontremos todos os clientes
       const q = query(collection(db, 'registrations'));
       const querySnapshot = await getDocs(q);
       
+      console.log(`Encontrados ${querySnapshot.docs.length} registros de clientes.`);
+      
       const clientsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
+        console.log('Dados do cliente:', doc.id, data);
+        
+        // Determinar o nome do cliente com base no tipo (PF ou PJ)
+        let clientName = 'Nome não disponível';
+        let clientType: 'PF' | 'PJ' = data.type || 'PF';
+        
+        if (clientType === 'PF') {
+          clientName = data.name || 'Cliente PF';
+        } else if (clientType === 'PJ') {
+          clientName = data.companyName || data.name || 'Cliente PJ';
+        }
+        
+        console.log(`Cliente processado: ${clientName} (${clientType}) - ID: ${doc.id}`);
+        
         return {
           id: doc.id,
-          name: data.fullName || data.companyName || 'Nome não disponível',
-          type: data.documentType === 'cpf' ? 'PF' as const : 'PJ' as const,
+          name: clientName,
+          type: clientType,
         };
-      });
+      }).filter(client => client.name !== 'Nome não disponível');
 
-      setClients(clientsData);
-      setFilteredClients(clientsData);
+      console.log('Total de clientes válidos encontrados:', clientsData.length);
+      
+      // Ordenar por nome para facilitar a busca
+      const sortedClients = clientsData.sort((a, b) => a.name.localeCompare(b.name));
+      
+      setClients(sortedClients);
+      setFilteredClients(sortedClients);
     } catch (error) {
       console.error('Erro ao buscar clientes:', error);
+      // Mostrar lista vazia em caso de erro
+      setClients([]);
+      setFilteredClients([]);
     }
   };
 
@@ -345,6 +426,23 @@ export default function Proposals() {
       }
       
       const originalProposal = proposalSnap.data();
+      
+      // Se a proposta tem um bankId, buscar os dados atualizados do banco
+      if (originalProposal.bankId) {
+        try {
+          const bankRef = doc(db, 'banks', originalProposal.bankId);
+          const bankSnap = await getDoc(bankRef);
+          
+          if (bankSnap.exists()) {
+            const bankData = bankSnap.data();
+            originalProposal.bankName = bankData.companyName || originalProposal.bankName;
+            originalProposal.bankTradingName = bankData.tradingName || bankData.companyName || originalProposal.bankTradingName;
+            console.log('Dados do banco atualizados para duplicação:', originalProposal.bankName);
+          }
+        } catch (error) {
+          console.error('Erro ao buscar dados do banco para duplicação:', error);
+        }
+      }
       
       // Gerar um novo número de proposta
       // Buscar todas as propostas para determinar o próximo número
@@ -513,13 +611,13 @@ export default function Proposals() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold text-white">Controle de Propostas</h2>
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0">
+        <h2 className="text-xl md:text-2xl font-semibold text-white">Controle de Propostas</h2>
         {isAdmin && (
           <button
             onClick={handleCreateNewProposal}
-            className="flex items-center px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100"
+            className="flex items-center px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100 w-full sm:w-auto justify-center sm:justify-start"
           >
             <Plus size={16} className="mr-2" />
             Nova Proposta
@@ -527,186 +625,285 @@ export default function Proposals() {
         )}
       </div>
 
-      {/* Filtros */}
-      <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4">
-        <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Filtro por data */}
-          <div>
-            <label htmlFor="dateFilter" className="block text-sm font-medium text-white mb-1">
-              Data da Proposta
-            </label>
-            <div className="relative">
-              <input
-                type="date"
-                id="dateFilter"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
-            </div>
-          </div>
-          
-          {/* Filtro por nome do cliente */}
-          <div>
-            <label htmlFor="clientNameFilter" className="block text-sm font-medium text-white mb-1">
-              Nome do Cliente
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                id="clientNameFilter"
-                value={clientNameFilter}
-                onChange={(e) => setClientNameFilter(e.target.value)}
-                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="Buscar por nome..."
-              />
-              <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
-            </div>
-          </div>
-          
-          {/* Filtro por status da proposta */}
-          <div>
-            <label htmlFor="statusFilter" className="block text-sm font-medium text-white mb-1">
-              Status da Proposta
-            </label>
-            <select
-              id="statusFilter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="all">Todos</option>
-              <option value="pending">Cadastro Enviado</option>
-              <option value="in_analysis">Em Análise</option>
-              <option value="with_pendencies">Pendências</option>
-              <option value="approved">Aprovada</option>
-              <option value="rejected">Recusada</option>
-            </select>
-          </div>
-          
-          {/* Filtro por status do pipeline */}
-          <div>
-            <label htmlFor="pipelineStatusFilter" className="block text-sm font-medium text-white mb-1">
-              Status do Pipeline
-            </label>
-            <select
-              id="pipelineStatusFilter"
-              value={pipelineStatusFilter}
-              onChange={(e) => setPipelineStatusFilter(e.target.value as any)}
-              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="all">Todos</option>
-              <option value="submitted">Cadastro Enviado</option>
-              <option value="pre_analysis">Pré-Análise</option>
-              <option value="credit">Crédito</option>
-              <option value="legal">Jurídico/Imóvel</option>
-              <option value="contract">Em Contrato</option>
-            </select>
-          </div>
-        </div>
-        
-        {/* Botão para limpar filtros */}
-        {(dateFilter || clientNameFilter || statusFilter !== 'all' || pipelineStatusFilter !== 'all') && (
-          <button
-            onClick={resetFilters}
-            className="flex items-center text-sm text-white hover:text-blue-300"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Limpar filtros
-          </button>
+      {/* Botão para abrir/fechar o acordeon de filtros */}
+      <button
+        onClick={toggleFilters}
+        className="flex items-center justify-center w-full py-2 bg-black border border-gray-600 text-white rounded-lg mb-6"
+      >
+        {filtersOpen ? (
+          <X className="h-4 w-4 mr-1" />
+        ) : (
+          <Search className="h-4 w-4 mr-1" />
         )}
-      </div>
+        <span>{filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}</span>
+      </button>
+      
+      {/* Filtros */}
+      {filtersOpen && (
+        <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4 w-full overflow-hidden">
+          <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+            {/* Filtro por data */}
+            <div>
+              <label htmlFor="dateFilter" className="block text-sm font-medium text-white mb-1">
+                Data da Proposta
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  id="dateFilter"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+              </div>
+            </div>
+            
+            {/* Filtro por nome do cliente */}
+            <div>
+              <label htmlFor="clientNameFilter" className="block text-sm font-medium text-white mb-1">
+                Nome do Cliente
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="clientNameFilter"
+                  value={clientNameFilter}
+                  onChange={(e) => setClientNameFilter(e.target.value)}
+                  className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Buscar por nome..."
+                />
+                <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+              </div>
+            </div>
+            
+            {/* Filtro por status da proposta */}
+            <div>
+              <label htmlFor="statusFilter" className="block text-sm font-medium text-white mb-1">
+                Status da Proposta
+              </label>
+              <select
+                id="statusFilter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">Todos</option>
+                <option value="pending">Cadastro Enviado</option>
+                <option value="in_analysis">Em Análise</option>
+                <option value="with_pendencies">Pendências</option>
+                <option value="approved">Aprovada</option>
+                <option value="rejected">Recusada</option>
+              </select>
+            </div>
+            
+            {/* Filtro por status do pipeline */}
+            <div>
+              <label htmlFor="pipelineStatusFilter" className="block text-sm font-medium text-white mb-1">
+                Status do Pipeline
+              </label>
+              <select
+                id="pipelineStatusFilter"
+                value={pipelineStatusFilter}
+                onChange={(e) => setPipelineStatusFilter(e.target.value as any)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">Todos</option>
+                <option value="submitted">Cadastro Enviado</option>
+                <option value="pre_analysis">Pré-Análise</option>
+                <option value="credit">Crédito</option>
+                <option value="legal">Jurídico/Imóvel</option>
+                <option value="contract">Em Contrato</option>
+              </select>
+            </div>
+          </div>
+          
+          {/* Botão para limpar filtros */}
+          {(dateFilter || clientNameFilter || statusFilter !== 'all' || pipelineStatusFilter !== 'all') && (
+            <button
+              onClick={resetFilters}
+              className="flex items-center text-sm text-white hover:text-blue-300"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      )}
       
       {/* Tabela de Propostas */}
-      <div className="bg-black border border-gray-700 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="flex justify-center items-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-            </div>
-          ) : filteredProposals.length > 0 ? (
-            <table className="min-w-full divide-y divide-gray-800">
-              <thead className="bg-gray-900">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Data
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Proposta
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Cliente
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Valor
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Banco
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Status
-                  </th>
-                  {isAdmin && (
+      <div className="bg-black border border-gray-700 rounded-lg overflow-hidden w-full">
+        {loading ? (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+          </div>
+        ) : filteredProposals.length > 0 ? (
+          <>
+            {/* Versão para Desktop - Tabela */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-800">
+                <thead className="bg-gray-900">
+                  <tr>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                      Status do Pipeline
+                      Data
                     </th>
-                  )}
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-black divide-y divide-gray-800">
-                {filteredProposals.map((proposal) => (
-                  <tr key={proposal.id} className="hover:bg-gray-900">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div 
-                        className="text-sm text-gray-300 cursor-help"
-                        title={format(new Date(proposal.createdAt), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
-                      >
-                        {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-white">{proposal.proposalNumber}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">
-                        {proposal.clientId ? (
-                          <button 
-                            onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
-                            className="hover:underline hover:text-blue-300 text-left"
-                          >
-                            {proposal.clientName}
-                          </button>
-                        ) : (
-                          proposal.clientName
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">{formatCurrency(proposal.desiredCredit)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">{proposal.bankTradingName || proposal.bankName || "Não informado"}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
-                        {proposalStatusLabels[proposal.status]}
-                      </span>
-                    </td>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Proposta
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Cliente
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Valor
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Banco
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Status
+                    </th>
                     {isAdmin && (
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                        Status do Pipeline
+                      </th>
+                    )}
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-black divide-y divide-gray-800">
+                  {filteredProposals.map((proposal) => (
+                    <tr key={proposal.id} className="hover:bg-gray-900">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus]}`}>
-                          {pipelineStatusLabels[proposal.pipelineStatus]}
+                        <div 
+                          className="text-sm text-gray-300 cursor-help"
+                          title={format(new Date(proposal.createdAt), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                        >
+                          {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-white">{proposal.proposalNumber}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-white">
+                          {proposal.clientId ? (
+                            <button 
+                              onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
+                              className="hover:underline hover:text-blue-300 text-left"
+                            >
+                              {proposal.clientName}
+                            </button>
+                          ) : (
+                            proposal.clientName
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-white">{formatCurrency(proposal.desiredCredit)}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-white">{proposal.bankTradingName || proposal.bankName || "Não informado"}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
+                          {proposalStatusLabels[proposal.status]}
                         </span>
                       </td>
-                    )}
-                    <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
-                      <div className="flex justify-start space-x-4">
+                      {isAdmin && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus]}`}>
+                            {pipelineStatusLabels[proposal.pipelineStatus]}
+                          </span>
+                        </td>
+                      )}
+                      <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
+                        <div className="flex justify-start space-x-4">
+                          <button
+                            onClick={() => handleViewProposal(proposal.id)}
+                            className="text-cyan-400 hover:text-cyan-300 hover:drop-shadow-[0_0_4px_rgba(34,211,238,0.6)] transition-all"
+                            title="Visualizar"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          
+                          {isAdmin && (
+                            <>
+                              <button
+                                onClick={() => handleEditProposal(proposal.id)}
+                                className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
+                                title="Editar"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  setProposalToChangeStatus(proposal.id);
+                                  setShowStatusModal(true);
+                                }}
+                                className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
+                                title="Alterar Status"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  setProposalToDuplicate(proposal.id);
+                                  setProposalToDuplicateNumber(proposal.proposalNumber);
+                                  setShowDuplicateModal(true);
+                                }}
+                                className="text-indigo-400 hover:text-indigo-300 hover:drop-shadow-[0_0_4px_rgba(129,140,248,0.6)] transition-all"
+                                title="Duplicar Proposta"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                              
+                              <button
+                                onClick={() => handleAddObservation(proposal.id)}
+                                className="text-purple-400 hover:text-purple-300 hover:drop-shadow-[0_0_4px_rgba(167,139,250,0.6)] transition-all"
+                                title="Adicionar Observação"
+                              >
+                                <MessageSquarePlus className="h-4 w-4" />
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  setProposalToDelete(proposal.id);
+                                  setShowDeleteModal(true);
+                                }}
+                                className="text-rose-400 hover:text-rose-300 hover:drop-shadow-[0_0_4px_rgba(251,113,133,0.6)] transition-all"
+                                title="Excluir"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Versão para Mobile - Cards */}
+            <div className="block md:hidden">
+              <div className="divide-y divide-gray-700">
+                {filteredProposals.map((proposal) => (
+                  <div key={proposal.id} className="p-4 hover:bg-gray-900">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="max-w-[70%]">
+                        <div className="text-sm font-medium text-white mb-1">{proposal.proposalNumber}</div>
+                        <div className="text-xs text-gray-400">
+                          {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
                         <button
                           onClick={() => handleViewProposal(proposal.id)}
                           className="text-cyan-400 hover:text-cyan-300 hover:drop-shadow-[0_0_4px_rgba(34,211,238,0.6)] transition-all"
@@ -724,62 +921,112 @@ export default function Proposals() {
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
-                            
-                            <button
-                              onClick={() => {
-                                setProposalToChangeStatus(proposal.id);
-                                setShowStatusModal(true);
-                              }}
-                              className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
-                              title="Alterar Status"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </button>
-                            
-                            <button
-                              onClick={() => {
-                                setProposalToDuplicate(proposal.id);
-                                setProposalToDuplicateNumber(proposal.proposalNumber);
-                                setShowDuplicateModal(true);
-                              }}
-                              className="text-indigo-400 hover:text-indigo-300 hover:drop-shadow-[0_0_4px_rgba(129,140,248,0.6)] transition-all"
-                              title="Duplicar Proposta"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </button>
-                            
-                            <button
-                              onClick={() => handleAddObservation(proposal.id)}
-                              className="text-purple-400 hover:text-purple-300 hover:drop-shadow-[0_0_4px_rgba(167,139,250,0.6)] transition-all"
-                              title="Adicionar Observação"
-                            >
-                              <MessageSquarePlus className="h-4 w-4" />
-                            </button>
-                            
-                            <button
-                              onClick={() => {
-                                setProposalToDelete(proposal.id);
-                                setShowDeleteModal(true);
-                              }}
-                              className="text-rose-400 hover:text-rose-300 hover:drop-shadow-[0_0_4px_rgba(251,113,133,0.6)] transition-all"
-                              title="Excluir"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
                           </>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Cliente</div>
+                        <div className="text-sm text-white truncate max-w-full block">
+                          {proposal.clientId ? (
+                            <button 
+                              onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
+                              className="hover:underline hover:text-blue-300 text-left truncate max-w-full block"
+                            >
+                              {proposal.clientName}
+                            </button>
+                          ) : (
+                            proposal.clientName
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Valor</div>
+                        <div className="text-sm text-white">{formatCurrency(proposal.desiredCredit)}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Banco</div>
+                        <div className="text-sm text-white truncate max-w-full">{proposal.bankTradingName || proposal.bankName || "Não informado"}</div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">Status</div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
+                          {proposalStatusLabels[proposal.status]}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {isAdmin && (
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-400 mb-1">Status do Pipeline</div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus]}`}>
+                          {pipelineStatusLabels[proposal.pipelineStatus]}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {isAdmin && (
+                      <div className="mt-3 pt-3 border-t border-gray-800 flex justify-end space-x-3">
+                        <button
+                          onClick={() => {
+                            setProposalToChangeStatus(proposal.id);
+                            setShowStatusModal(true);
+                          }}
+                          className="text-green-400 hover:text-green-300 transition-all"
+                          title="Alterar Status"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setProposalToDuplicate(proposal.id);
+                            setProposalToDuplicateNumber(proposal.proposalNumber);
+                            setShowDuplicateModal(true);
+                          }}
+                          className="text-indigo-400 hover:text-indigo-300 transition-all"
+                          title="Duplicar Proposta"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        
+                        <button
+                          onClick={() => handleAddObservation(proposal.id)}
+                          className="text-purple-400 hover:text-purple-300 transition-all"
+                          title="Adicionar Observação"
+                        >
+                          <MessageSquarePlus className="h-4 w-4" />
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setProposalToDelete(proposal.id);
+                            setShowDeleteModal(true);
+                          }}
+                          className="text-rose-400 hover:text-rose-300 transition-all"
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="py-8 text-center text-white">
-              <p>Nenhuma proposta encontrada com os filtros aplicados.</p>
+              </div>
             </div>
-          )}
-        </div>
+          </> 
+        ) : (
+          <div className="py-8 text-center text-white">
+            <p>Nenhuma proposta encontrada com os filtros aplicados.</p>
+          </div>
+        )}
       </div>
       
       {/* Modal de Confirmação de Exclusão */}
@@ -900,6 +1147,14 @@ export default function Proposals() {
                   className="bg-black border border-gray-700 text-white rounded-md w-full px-3 py-2.5 h-10 pl-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <Search className="h-4 w-4 text-gray-400 absolute left-3 top-3" />
+                {clientSearchTerm && (
+                  <button 
+                    onClick={() => setClientSearchTerm('')}
+                    className="absolute right-3 top-3"
+                  >
+                    <X className="h-4 w-4 text-gray-400 hover:text-white" />
+                  </button>
+                )}
               </div>
             </div>
             
@@ -929,14 +1184,44 @@ export default function Proposals() {
                 </div>
               ) : (
                 <div className="p-4 text-center text-gray-400">
-                  {clientSearchTerm ? 'Nenhum cliente encontrado' : 'Carregando clientes...'}
+                  {clients.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mb-2"></div>
+                      <p>Carregando clientes...</p>
+                    </div>
+                  ) : clientSearchTerm ? (
+                    'Nenhum cliente encontrado com este nome'
+                  ) : (
+                    'Nenhum cliente cadastrado'
+                  )}
                 </div>
               )}
             </div>
             
+            <div className="flex justify-between items-center mt-2 mb-4">
+              <div className="text-xs text-gray-400">
+                {filteredClients.length > 0 ? 
+                  `${filteredClients.length} cliente${filteredClients.length !== 1 ? 's' : ''} encontrado${filteredClients.length !== 1 ? 's' : ''}` : 
+                  ''}
+              </div>
+              <button
+                onClick={fetchClients}
+                className="text-xs text-blue-400 hover:text-blue-300 flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Atualizar lista
+              </button>
+            </div>
+            
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setShowNewProposalModal(false)}
+                onClick={() => {
+                  setShowNewProposalModal(false);
+                  setSelectedClient(null);
+                  setClientSearchTerm('');
+                }}
                 className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800"
               >
                 Cancelar

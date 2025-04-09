@@ -139,9 +139,9 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
               return;
             }
             
-            // Primeiro, definir todos os campos exceto desiredCredit
+            // Primeiro, definir todos os campos exceto desiredCredit e propertyValue
             Object.entries(data).forEach(([key, value]) => {
-              if (key !== 'documents' && key !== 'createdAt' && key !== 'updatedAt' && key !== 'desiredCredit') {
+              if (key !== 'documents' && key !== 'createdAt' && key !== 'updatedAt' && key !== 'desiredCredit' && key !== 'propertyValue') {
                 console.log(`Definindo campo ${key} com valor:`, value);
                 
                 // Tratamento especial para campos aninhados como address
@@ -165,6 +165,18 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
               setTimeout(() => {
                 console.log('Definindo crédito desejado com atraso:', data.desiredCredit);
                 setValue('desiredCredit', data.desiredCredit);
+              }, 500);
+            }
+            
+            // Definir o valor do imóvel separadamente para garantir que seja tratado como número
+            if (data.propertyValue !== undefined) {
+              console.log('Definindo valor do imóvel:', data.propertyValue);
+              setValue('propertyValue', data.propertyValue);
+              
+              // Definir novamente com um pequeno atraso para garantir que o componente esteja pronto
+              setTimeout(() => {
+                console.log('Definindo valor do imóvel com atraso:', data.propertyValue);
+                setValue('propertyValue', data.propertyValue);
               }, 500);
             }
             
@@ -562,14 +574,33 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
 
                 {hasProperty && (
                   <div className="relative">
-                    <CurrencyInput
-                      name="propertyValue"
-                      disabled={!hasProperty || initialLoading}
-                      register={register}
-                      setValue={setValue}
-                      className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm ${!hasProperty ? 'opacity-50' : ''}`}
-                      placeholder="Valor do imóvel"
-                    />
+                    <label htmlFor="propertyValue" className="block text-sm font-medium text-gray-300 mb-1">
+                      Valor do Imóvel
+                    </label>
+                    <div className="mt-1">
+                      {isEditMode || id ? (
+                        <div>
+                          <input
+                            type="text"
+                            value={watch('propertyValue') ? `R$ ${Number(watch('propertyValue')).toFixed(2).replace('.', ',')}` : 'R$ 0,00'}
+                            disabled={true}
+                            className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 opacity-70"
+                          />
+                          <div className="text-xs text-gray-400 mt-1">
+                            Este valor não pode ser alterado pois foi definido no cadastro inicial.
+                          </div>
+                        </div>
+                      ) : (
+                        <CurrencyInput
+                          name="propertyValue"
+                          disabled={!hasProperty || initialLoading}
+                          register={register}
+                          setValue={setValue}
+                          className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm ${!hasProperty ? 'opacity-50' : ''}`}
+                          placeholder="Valor do imóvel"
+                        />
+                      )}
+                    </div>
                   </div>
                 )}
 

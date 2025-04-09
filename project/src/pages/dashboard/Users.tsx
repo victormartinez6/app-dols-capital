@@ -66,6 +66,14 @@ export default function Users() {
   const [nameFilter, setNameFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'client' | 'manager' | 'admin'>('all');
   const [registrationFilter, setRegistrationFilter] = useState<'all' | 'yes' | 'no'>('all');
+  
+  // Estado para controlar se o acordeon de filtros está aberto ou fechado
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // Função para alternar o estado do acordeon
+  const toggleFilters = () => {
+    setFiltersOpen(!filtersOpen);
+  };
 
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
@@ -311,8 +319,26 @@ export default function Users() {
         )}
       </div>
 
+      {/* Botão de Filtros */}
+      <button
+        onClick={toggleFilters}
+        className="flex items-center justify-center w-full py-2 bg-black border border-gray-600 text-white rounded-lg mb-6"
+      >
+        {filtersOpen ? (
+          <>
+            <X className="h-4 w-4 mr-2" />
+            Fechar Filtros
+          </>
+        ) : (
+          <>
+            <Search className="h-4 w-4 mr-2" />
+            Abrir Filtros
+          </>
+        )}
+      </button>
+
       {/* Filtros */}
-      <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4 mb-6">
+      <div className={`bg-black border border-gray-700 rounded-lg p-4 space-y-4 mb-6 ${filtersOpen ? 'block' : 'hidden'}`}>
         <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -393,118 +419,197 @@ export default function Users() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
         </div>
       ) : (
-        <>
-          {filteredUsers.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-400">Nenhum usuário encontrado.</p>
+        <div className="bg-black border border-gray-700 rounded-lg overflow-hidden">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+              <div className="text-center">
+                <p className="mb-2">Nenhum usuário encontrado.</p>
+                {(nameFilter || roleFilter !== 'all' || registrationFilter !== 'all') && (
+                  <button
+                    onClick={resetFilters}
+                    className="text-blue-400 hover:text-blue-300"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="bg-black border border-gray-700 rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-800">
-                  <thead className="bg-gray-900">
+            <div>
+              {/* Versão Desktop */}
+              <div className="hidden md:block">
+                <table className="w-full">
+                  <thead className="bg-gray-900 text-white">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Nome
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        E-mail
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Perfil
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Cadastro
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Último Acesso
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Data de Criação
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Ações
-                      </th>
+                      <th className="py-3 px-4 text-left">Nome</th>
+                      <th className="py-3 px-4 text-left">E-mail</th>
+                      <th className="py-3 px-4 text-left">Perfil</th>
+                      <th className="py-3 px-4 text-left">Cadastro</th>
+                      <th className="py-3 px-4 text-left">Criado em</th>
+                      <th className="py-3 px-4 text-left">Status</th>
+                      <th className="py-3 px-4 text-right">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-black divide-y divide-gray-800">
-                    {filteredUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-900">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-white">{user.name}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-300">{user.email}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                  <tbody className="divide-y divide-gray-800">
+                    {filteredUsers.map(user => (
+                      <tr key={user.id} className="hover:bg-gray-900/50">
+                        <td className="py-3 px-4 text-white">{user.name}</td>
+                        <td className="py-3 px-4 text-gray-300">{user.email}</td>
+                        <td className="py-3 px-4">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
                             {roleLabels[user.role]}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            user.hasRegistration
-                              ? 'text-green-400 bg-green-400/10'
-                              : 'text-red-400 bg-red-400/10'
-                          }`}>
-                            {user.hasRegistration ? (
-                              user.registrationType === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'
-                            ) : 'Sem Cadastro'}
-                          </span>
+                        <td className="py-3 px-4 text-gray-300">
+                          {user.hasRegistration ? (
+                            <span className="text-green-400">Sim ({user.registrationType === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'})</span>
+                          ) : (
+                            <span className="text-gray-500">Não</span>
+                          )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-300">{formatDate(user.lastAccess)}</div>
+                        <td className="py-3 px-4 text-gray-300">{formatDate(user.createdAt)}</td>
+                        <td className="py-3 px-4 text-gray-300">
+                          {user.blocked ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-400/10 text-red-400">
+                              <Lock className="h-3 w-3 mr-1" />
+                              Bloqueado
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-400/10 text-green-400">
+                              <Unlock className="h-3 w-3 mr-1" />
+                              Ativo
+                            </span>
+                          )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-300">{formatDate(user.createdAt)}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
-                          <div className="flex justify-start space-x-4">
-                            <button
-                              onClick={() => handleViewUser(user.id)}
-                              className="text-cyan-400 hover:text-cyan-300 hover:drop-shadow-[0_0_4px_rgba(34,211,238,0.6)] transition-all"
-                              title="Ver detalhes"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-
-                            {currentUser?.role === 'admin' && (
-                              <>
-                                <button
-                                  onClick={() => handleEditUser(user.id)}
-                                  className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
-                                  title="Editar"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-
-                                <button
-                                  onClick={() => handleBlockUser(user.id, user.name, user.blocked || false)}
-                                  className={`${user.blocked ? 'text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)]' : 'text-orange-400 hover:text-orange-300 hover:drop-shadow-[0_0_4px_rgba(251,146,60,0.6)]'} transition-all`}
-                                  title={user.blocked ? "Desbloquear" : "Bloquear"}
-                                >
-                                  {user.blocked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                                </button>
-
-                                <button
-                                  onClick={() => handleDeleteUser(user.id, user.name)}
-                                  className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
-                                  title="Excluir"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </>
+                        <td className="py-3 px-4 text-right space-x-2">
+                          <button
+                            onClick={() => handleViewUser(user.id)}
+                            className="text-gray-400 hover:text-white transition-colors"
+                            title="Ver detalhes"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleEditUser(user.id)}
+                            className="text-gray-400 hover:text-white transition-colors"
+                            title="Editar"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleBlockUser(user.id, user.name, user.blocked || false)}
+                            className="text-gray-400 hover:text-white transition-colors"
+                            title={user.blocked ? "Desbloquear" : "Bloquear"}
+                          >
+                            {user.blocked ? (
+                              <Unlock className="h-4 w-4" />
+                            ) : (
+                              <Lock className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user.id, user.name)}
+                            className="text-gray-400 hover:text-red-400 transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              
+              {/* Versão Mobile - Cards */}
+              <div className="md:hidden">
+                <div className="divide-y divide-gray-800">
+                  {filteredUsers.map(user => (
+                    <div key={user.id} className="p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="text-white font-medium">{user.name}</h3>
+                          <p className="text-gray-400 text-sm">{user.email}</p>
+                        </div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
+                          {roleLabels[user.role]}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                        <div>
+                          <span className="text-gray-500">Cadastro:</span>
+                          <span className="text-gray-300 ml-1">
+                            {user.hasRegistration ? (
+                              <span className="text-green-400">Sim ({user.registrationType === 'PF' ? 'PF' : 'PJ'})</span>
+                            ) : (
+                              <span className="text-gray-500">Não</span>
+                            )}
+                          </span>
+                        </div>
+                        
+                        <div>
+                          <span className="text-gray-500">Status:</span>
+                          <span className="text-gray-300 ml-1">
+                            {user.blocked ? (
+                              <span className="text-red-400">Bloqueado</span>
+                            ) : (
+                              <span className="text-green-400">Ativo</span>
+                            )}
+                          </span>
+                        </div>
+                        
+                        <div>
+                          <span className="text-gray-500">Criado em:</span>
+                          <span className="text-gray-300 ml-1">{formatDate(user.createdAt)}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end space-x-3">
+                        <button
+                          onClick={() => handleViewUser(user.id)}
+                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
+                          title="Ver detalhes"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEditUser(user.id)}
+                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleBlockUser(user.id, user.name, user.blocked || false)}
+                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
+                          title={user.blocked ? "Desbloquear" : "Bloquear"}
+                        >
+                          {user.blocked ? (
+                            <Unlock className="h-4 w-4" />
+                          ) : (
+                            <Lock className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(user.id, user.name)}
+                          className="p-1.5 bg-gray-800 rounded-md text-gray-400 hover:text-red-400 transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
-        </>
+        </div>
       )}
       {/* Modal de Novo Usuário */}
       {isModalOpen && (
