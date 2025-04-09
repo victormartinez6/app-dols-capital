@@ -65,12 +65,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('Autenticação Firebase bem-sucedida. UID:', userCredential.user.uid);
+      
       const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+      console.log('Documento do usuário existe?', userDoc.exists());
       
       if (!userDoc.exists()) {
-        console.log('Documento do usuário não encontrado. Recriando...');
+        console.log('Documento do usuário não encontrado no Firestore. Criando documento...');
         
-        // Recriar o documento do usuário com informações básicas
+        // Criar o documento do usuário no Firestore
         const userData = {
           email: userCredential.user.email || email,
           name: userCredential.user.displayName || 'Usuário',
@@ -81,10 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Salvar o documento no Firestore
         await setDoc(doc(db, 'users', userCredential.user.uid), userData);
         
-        // Retornar o usuário recém-criado
+        // Definir o usuário no estado
         const user = {
           id: userCredential.user.uid,
-          ...userData,
+          email: userData.email,
+          name: userData.name,
+          role: userData.role,
           createdAt: new Date(),
         } as User;
         
@@ -93,6 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const userData = userDoc.data();
+      console.log('Dados do usuário recuperados:', userData);
+      
       const user = {
         id: userDoc.id,
         email: userData.email,

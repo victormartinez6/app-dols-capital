@@ -3,6 +3,7 @@ import { collection, getDocs, doc, deleteDoc, query, orderBy } from 'firebase/fi
 import { db } from '../../lib/firebase';
 import { Building2, Plus, Edit, Trash2, Loader2 } from 'lucide-react';
 import BankSettings from './settings/BankSettings';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Tipo para os dados do banco
 type Bank = {
@@ -18,18 +19,25 @@ type Bank = {
 };
 
 export default function Settings() {
+  const { user } = useAuth();
   const [showBankForm, setShowBankForm] = useState(false);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingBank, setEditingBank] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Carregar lista de bancos
   const loadBanks = async () => {
     try {
       setLoading(true);
+      setError(null);
+      console.log('Tentando carregar bancos. Usuário:', user?.email, 'Perfil:', user?.role);
+      
       const banksQuery = query(collection(db, 'banks'), orderBy('companyName'));
       const snapshot = await getDocs(banksQuery);
+      
+      console.log('Bancos encontrados:', snapshot.docs.length);
       
       const banksList = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -39,14 +47,17 @@ export default function Settings() {
       setBanks(banksList);
     } catch (error) {
       console.error('Erro ao carregar bancos:', error);
+      setError(`Erro ao carregar bancos: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadBanks();
-  }, []);
+    if (user) {
+      loadBanks();
+    }
+  }, [user]);
 
   // Excluir banco
   const deleteBank = async (id: string) => {
@@ -56,6 +67,7 @@ export default function Settings() {
       loadBanks();
     } catch (error) {
       console.error('Erro ao excluir banco:', error);
+      setError(`Erro ao excluir banco: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
   };
 
@@ -78,10 +90,40 @@ export default function Settings() {
     loadBanks();
   };
 
-  // Renderizar tabela de bancos
-  const renderBanksList = () => {
+  // Renderizar conteúdo principal
+  const renderContent = () => {
+    if (!user) {
+      return (
+        <div className="p-6">
+          <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">
+            <p className="text-sm text-red-500">Usuário não autenticado. Por favor, faça login novamente.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      return (
+        <div className="p-6">
+          <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">
+            <p className="text-sm text-red-500">Você não tem permissão para acessar esta página.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (showBankForm) {
+      return <BankSettings bankId={editingBank} onSaved={backToList} />;
+    }
+
     return (
       <div className="p-6">
+        {error && (
+          <div className="mb-4 bg-red-500/10 border border-red-500 rounded-lg p-4">
+            <p className="text-sm text-red-500">{error}</p>
+          </div>
+        )}
+        
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-semibold">Bancos Cadastrados</h3>
           <button
@@ -134,7 +176,7 @@ export default function Settings() {
                           <div className="text-sm font-medium text-white">{bank.companyName}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                          {bank.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}
+                          {bank.cnpj && bank.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                           {bank.commission ? `${bank.commission}%` : '-'}
@@ -211,13 +253,7 @@ export default function Settings() {
         )}
       </div>
       
-      <div>
-        {showBankForm ? (
-          <BankSettings bankId={editingBank} onSaved={backToList} />
-        ) : (
-          renderBanksList()
-        )}
-      </div>
+      {renderContent()}
     </div>
   );
 }

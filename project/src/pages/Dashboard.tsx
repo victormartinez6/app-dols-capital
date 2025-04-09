@@ -38,12 +38,12 @@ export default function Dashboard() {
             <Route path="pipeline" element={<Pipeline />} />
             <Route path="clients" element={<Clients />} />
             <Route path="clients/detail/:id" element={<ClientDetail />} />
+            <Route path="settings" element={<Settings />} />
           </>
         )}
         {user?.role === 'admin' && (
           <>
             <Route path="users" element={<Users />} />
-            <Route path="settings" element={<Settings />} />
           </>
         )}
       </Routes>

@@ -54,13 +54,15 @@ export default function Login() {
       navigate('/');
     } catch (error: any) {
       if (error.code === 'auth/invalid-credential') {
-        setError('E-mail ou senha incorretos. Verifique suas credenciais.');
+        setError('E-mail ou senha incorretos. Por favor, verifique suas credenciais e tente novamente.');
       } else if (error.code === 'auth/email-already-in-use') {
         setError('Este e-mail já está em uso. Tente fazer login ou use outro e-mail.');
       } else if (error.code === 'auth/network-request-failed') {
         setError('Erro de conexão. Verifique sua internet e tente novamente.');
       } else if (error.code === 'auth/too-many-requests') {
         setError('Muitas tentativas. Aguarde um momento antes de tentar novamente.');
+      } else if (error.message === 'User document not found') {
+        setError('Usuário não encontrado no sistema. Entre em contato com o administrador.');
       } else {
         setError('Ocorreu um erro durante a autenticação. Tente novamente.');
       }

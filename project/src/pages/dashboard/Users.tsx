@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { UserPlus, Pencil, Trash2, RefreshCw, Search, X, Eye, Filter, Lock, Unlock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { UserPlus, Pencil, Trash2, Search, X, Eye, Lock, Unlock } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { collection, getDocs, query, serverTimestamp, doc, setDoc, addDoc, where, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { createUserWithRole, deleteUserDocument, updateUserBlockStatus, deleteAuthUser, disableAuthUser } from '../../services/UserService';
 
 const userSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -161,44 +162,31 @@ export default function Users() {
         return;
       }
 
-      // Criar uma solicitação para criação de usuário
-      // Em um ambiente real, isso seria processado por uma Cloud Function
-      const userRequest = {
-        name: data.name,
-        email: data.email,
-        password: data.password,
-        role: data.role,
-        status: 'pending',
-        requestedBy: currentUser.id,
-        requestedAt: serverTimestamp()
-      };
+      try {
+        // Criar usuário no Firebase Authentication e no Firestore
+        await createUserWithRole({
+          name: data.name,
+          email: data.email,
+          password: data.password,
+          role: data.role
+        }, currentUser.id);
 
-      // Adicionar a solicitação ao Firestore
-      await addDoc(collection(db, 'userRequests'), userRequest);
+        // Fechar o modal e limpar o formulário
+        setIsModalOpen(false);
+        reset();
 
-      // Simular a criação do usuário (em produção, isso seria feito por uma Cloud Function)
-      // Adicionar o usuário diretamente à coleção de usuários
-      const newUser = {
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        createdAt: serverTimestamp(),
-        createdBy: currentUser.id,
-        hasRegistration: false
-      };
+        // Atualizar a lista de usuários
+        fetchUsers();
 
-      // Gerar um ID único para o usuário
-      const newUserId = `user_${Date.now()}`;
-      await setDoc(doc(db, 'users', newUserId), newUser);
-
-      // Fechar o modal e limpar o formulário
-      setIsModalOpen(false);
-      reset();
-
-      // Atualizar a lista de usuários
-      fetchUsers();
-
-      alert('Usuário criado com sucesso!');
+        alert('Usuário criado com sucesso!');
+      } catch (authError: any) {
+        console.error('Erro ao criar usuário:', authError);
+        if (authError.code === 'auth/email-already-in-use') {
+          setError('Este e-mail já está em uso no Firebase Authentication.');
+        } else {
+          setError(`Erro ao criar usuário: ${authError.message}`);
+        }
+      }
     } catch (err: any) {
       console.error('Erro ao criar usuário:', err);
       setError('Erro ao criar usuário. Por favor, tente novamente.');
@@ -217,11 +205,25 @@ export default function Users() {
     if (!userToDelete) return;
 
     try {
-      await deleteDoc(doc(db, 'users', userToDelete));
+      // Excluir o documento do usuário no Firestore
+      await deleteUserDocument(userToDelete);
+      
+      // Tentar excluir o usuário no Firebase Authentication (se existir)
+      try {
+        await deleteAuthUser(userToDelete);
+        console.log('Usuário excluído do Firebase Authentication com sucesso');
+      } catch (authError) {
+        console.warn('Não foi possível excluir o usuário do Firebase Authentication:', authError);
+        // Não interromper o fluxo se falhar no Firebase Authentication
+      }
+      
+      // Atualizar a interface
       setUsers(prev => prev.filter(user => user.id !== userToDelete));
       setShowDeleteModal(false);
       setUserToDelete(null);
       setUserToDeleteName(null);
+      
+      alert('Usuário excluído com sucesso!');
     } catch (err) {
       console.error('Erro ao excluir usuário:', err);
       setError('Falha ao excluir usuário. Por favor, tente novamente.');
@@ -250,12 +252,19 @@ export default function Users() {
       // Inverter o status de bloqueio
       const newBlockStatus = !userBlockStatus;
 
-      await updateDoc(doc(db, 'users', userToBlock), {
-        blocked: newBlockStatus,
-        blockedAt: newBlockStatus ? serverTimestamp() : null
-      });
-
-      // Atualizar a lista de usuários
+      // Atualizar o status de bloqueio no Firestore
+      await updateUserBlockStatus(userToBlock, newBlockStatus);
+      
+      // Tentar desativar o usuário no Firebase Authentication (se existir)
+      try {
+        await disableAuthUser(userToBlock, newBlockStatus);
+        console.log(`Usuário ${newBlockStatus ? 'bloqueado' : 'desbloqueado'} no Firebase Authentication com sucesso`);
+      } catch (authError) {
+        console.warn(`Não foi possível ${newBlockStatus ? 'bloquear' : 'desbloquear'} o usuário no Firebase Authentication:`, authError);
+        // Não interromper o fluxo se falhar no Firebase Authentication
+      }
+      
+      // Atualizar a interface
       setUsers(prev => prev.map(user =>
         user.id === userToBlock
           ? { ...user, blocked: newBlockStatus }
@@ -265,6 +274,8 @@ export default function Users() {
       setShowBlockModal(false);
       setUserToBlock(null);
       setUserToBlockName(null);
+      
+      alert(`Usuário ${newBlockStatus ? 'bloqueado' : 'desbloqueado'} com sucesso!`);
     } catch (err) {
       console.error('Erro ao alterar status de bloqueio do usuário:', err);
       setError('Falha ao alterar status de bloqueio. Por favor, tente novamente.');

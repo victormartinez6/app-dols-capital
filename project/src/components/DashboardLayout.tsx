@@ -53,7 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     },
     { path: '/pipeline', icon: Pipeline, label: 'Pipeline', roles: ['manager', 'admin'] },
     { path: '/users', icon: Users, label: 'Usuários', roles: ['admin'] },
-    { path: '/settings', icon: Settings, label: 'Configurações', roles: ['admin'] },
+    { path: '/settings', icon: Settings, label: 'Configurações', roles: ['manager', 'admin'] },
     { path: '/my-registration', icon: ClipboardList, label: 'Meu Cadastro', roles: ['client'] },
   ];
 
