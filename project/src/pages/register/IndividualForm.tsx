@@ -11,6 +11,7 @@ import CurrencyInput from '../../components/CurrencyInput';
 import LocalDocumentUpload from '../../components/LocalDocumentUpload';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import SuccessModal from '../../components/SuccessModal';
+import { webhookService } from '../../services/WebhookService';
 
 interface IndividualFormProps {
   isEditing?: boolean;
@@ -305,7 +306,9 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
         ...sanitizedData,
         documents: documentReferences, // Salvar apenas as referências
         type: 'PF', // Usar consistentemente 'PF' em vez de 'individual'
-        pipelineStatus: sanitizedData.pipelineStatus || 'novo',
+        pipelineStatus: 'submitted',
+        // Definir o status com base na existência de documentos
+        status: Object.keys(documentReferences).length > 0 ? 'complete' : 'documents_pending',
         updatedAt: serverTimestamp(),
       };
       
@@ -316,7 +319,33 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
       console.log('Dados a serem salvos:', registrationData);
       
       // Salvar no Firestore
+      // Obter o status anterior para o webhook (apenas em modo de edição)
+      let previousStatus = null;
+      if (isEditMode) {
+        const registrationDoc = await getDoc(doc(db, 'registrations', registrationId));
+        if (registrationDoc.exists()) {
+          previousStatus = registrationDoc.data().status;
+        }
+      }
+      
       await setDoc(doc(db, 'registrations', registrationId), registrationData, { merge: true });
+      
+      // Enviar webhook de alteração de status se estiver em modo de edição e o status mudou
+      if (isEditMode && previousStatus && previousStatus !== registrationData.status) {
+        // Obter os dados atualizados do cliente
+        const updatedClientDoc = await getDoc(doc(db, 'registrations', registrationId));
+        
+        if (updatedClientDoc.exists()) {
+          const clientData = {
+            id: registrationId,
+            ...updatedClientDoc.data()
+          };
+          
+          // Importar o serviço de webhook
+          const { webhookService } = await import('../../services/WebhookService');
+          await webhookService.sendClientStatusChanged(clientData, previousStatus);
+        }
+      }
       
       // Atualizar perfil do usuário com o tipo de cadastro
       if (!isEditMode && !id) {
@@ -350,6 +379,79 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
         
         // Adicionar a proposta à coleção 'proposals'
         await addDoc(collection(db, 'proposals'), proposalData);
+        
+        // Preparar dados do cliente para o webhook
+        const clientData = {
+          id: registrationId,
+          name: sanitizedData.name,
+          email: sanitizedData.email,
+          type: 'PF',
+          status: registrationData.status, // Usar o mesmo status definido anteriormente
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          address: {
+            street: sanitizedData.street,
+            number: sanitizedData.number,
+            complement: sanitizedData.complement,
+            neighborhood: sanitizedData.neighborhood,
+            city: sanitizedData.city,
+            state: sanitizedData.state,
+            zipCode: sanitizedData.cep
+          },
+          cpf: sanitizedData.cpf,
+          ddi: sanitizedData.ddi.replace('_', ''),
+          phone: sanitizedData.phone,
+          hasProperty: sanitizedData.hasProperty,
+          propertyValue: sanitizedData.propertyValue,
+          desiredCredit: sanitizedData.desiredCredit,
+          creditLine: sanitizedData.creditLine,
+          creditReason: sanitizedData.creditReason,
+          pipelineStatus: sanitizedData.pipelineStatus || 'novo'
+        };
+        
+        // Disparar webhook de cliente criado imediatamente
+        await webhookService.sendClientCreated(clientData);
+      } else if (isEditMode) {
+        // Obter os dados atualizados do cliente do banco de dados
+        const updatedClientDocRef = doc(db, 'clients', registrationId);
+        const updatedClientDoc = await getDoc(updatedClientDocRef);
+        
+        if (updatedClientDoc.exists()) {
+          const updatedClientData = {
+            id: registrationId,
+            ...updatedClientDoc.data()
+          };
+          await webhookService.sendClientUpdated(updatedClientData);
+        } else {
+          // Fallback para o objeto clientData se não conseguir obter os dados atualizados
+          const clientData = {
+            id: registrationId,
+            name: sanitizedData.name,
+            email: sanitizedData.email,
+            type: 'PF',
+            status: 'documents_pending',
+            updatedAt: new Date().toISOString(),
+            address: {
+              street: sanitizedData.street,
+              number: sanitizedData.number,
+              complement: sanitizedData.complement,
+              neighborhood: sanitizedData.neighborhood,
+              city: sanitizedData.city,
+              state: sanitizedData.state,
+              zipCode: sanitizedData.cep
+            },
+            cpf: sanitizedData.cpf,
+            ddi: sanitizedData.ddi.replace('_', ''),
+            phone: sanitizedData.phone,
+            hasProperty: sanitizedData.hasProperty,
+            propertyValue: sanitizedData.propertyValue,
+            desiredCredit: sanitizedData.desiredCredit,
+            creditLine: sanitizedData.creditLine,
+            creditReason: sanitizedData.creditReason,
+            pipelineStatus: sanitizedData.pipelineStatus || 'novo'
+          };
+          await webhookService.sendClientUpdated(clientData);
+        }
       }
       
       setShowSuccessModal(true);
@@ -646,6 +748,10 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     >
                       <option value="Capital de Giro">Capital de Giro</option>
                       <option value="Investimento">Investimento</option>
+                      <option value="Home Equity">Home Equity</option>
+                      <option value="Desconto">Desconto</option>
+                      <option value="CRI (Certificado de Recebíveis Imobiliários)">CRI (Certificado de Recebíveis Imobiliários)</option>
+                      <option value="CRA (Certificado de Recebíveis do Agronegócio)">CRA (Certificado de Recebíveis do Agronegócio)</option>
                       <option value="Outros">Outros</option>
                     </select>
                   </div>

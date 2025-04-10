@@ -14,6 +14,7 @@ import MyRegistration from './dashboard/MyRegistration.tsx';
 import UserProfile from './dashboard/UserProfile';
 import UserEdit from './dashboard/UserEdit';
 import UserDetail from './dashboard/UserDetail';
+import Webhooks from './dashboard/Webhooks';
 import { useAuth } from '../contexts/AuthContext';
 import { useRegistrationMonitor } from '../hooks/useRegistrationMonitor';
 
@@ -48,6 +49,7 @@ export default function Dashboard() {
             <Route path="users" element={<Users />} />
             <Route path="users/edit/:id" element={<UserEdit />} />
             <Route path="users/detail/:id" element={<UserDetail />} />
+            <Route path="webhooks" element={<Webhooks />} />
           </>
         )}
       </Routes>

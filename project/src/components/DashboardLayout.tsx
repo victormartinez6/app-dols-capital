@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Users, Settings, LogOut, LayoutDashboard, Baseline as Pipeline, UserCircle, ClipboardList, Menu, X } from 'lucide-react';
+import { FileText, Users, Settings, LogOut, LayoutDashboard, Baseline as Pipeline, UserCircle, ClipboardList, Menu, X, Globe } from 'lucide-react';
 import { Logo } from './Logo';
 import NotificationBell from './NotificationBell';
 import MenuNotificationBell from './MenuNotificationBell';
@@ -55,6 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { path: '/pipeline', icon: Pipeline, label: 'Pipeline', roles: ['manager', 'admin'] },
     { path: '/users', icon: Users, label: 'Usuários', roles: ['admin'] },
     { path: '/settings', icon: Settings, label: 'Configurações', roles: ['manager', 'admin'] },
+    { path: '/webhooks', icon: Globe, label: 'Webhooks', roles: ['admin'] },
     { path: '/my-registration', icon: ClipboardList, label: 'Meu Cadastro', roles: ['client'] },
   ];
 
@@ -200,6 +201,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   return 'Usuários';
                 } else if (location.pathname.startsWith('/settings')) {
                   return 'Configurações';
+                } else if (location.pathname.startsWith('/webhooks')) {
+                  return 'Webhooks';
                 } else if (location.pathname.startsWith('/my-registration')) {
                   return 'Meu Cadastro';
                 } else {

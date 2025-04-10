@@ -7,6 +7,7 @@ import {
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { useWebhookTrigger } from './hooks/useWebhookTrigger';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import PrivateRoute from './components/PrivateRoute';
@@ -21,6 +22,7 @@ import ProposalDetail from './pages/dashboard/ProposalDetail';
 import ProposalEdit from './pages/dashboard/ProposalEdit';
 import ProposalNew from './pages/dashboard/ProposalNew';
 import Settings from './pages/dashboard/Settings';
+import Webhooks from './pages/dashboard/Webhooks';
 
 // Configurando o roteador com as flags futuras
 const router = createBrowserRouter(
@@ -57,6 +59,7 @@ const router = createBrowserRouter(
         <Route path="proposals/edit/:id" element={<ProposalEdit />} />
         <Route path="proposals/new/:clientId" element={<ProposalNew />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="webhooks" element={<Webhooks />} />
       </Route>
     </Route>
   ),
@@ -67,11 +70,18 @@ const router = createBrowserRouter(
   }
 );
 
+// Componente para ativar o monitoramento de webhooks
+function WebhookProvider() {
+  useWebhookTrigger();
+  return null;
+}
+
 function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <NotificationProvider>
+          <WebhookProvider />
           <RouterProvider router={router} />
         </NotificationProvider>
       </AuthProvider>

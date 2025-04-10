@@ -307,10 +307,32 @@ export default function Clients() {
       
       // Atualizar no Firestore
       const registrationRef = doc(db, 'registrations', registrationId);
+      
+      // Obter o status anterior para o webhook
+      const clientDoc = await getDoc(registrationRef);
+      const previousStatus = clientDoc.exists() ? clientDoc.data().status : null;
+      
       await updateDoc(registrationRef, {
         pendencies: updatedPendencies,
         status: 'complete'
       });
+      
+      // Obter os dados atualizados do cliente para o webhook
+      const updatedClientDoc = await getDoc(registrationRef);
+      
+      if (updatedClientDoc.exists()) {
+        const clientData = {
+          id: registrationId,
+          ...updatedClientDoc.data()
+        };
+        
+        // Enviar webhook de alteração de status
+        if (previousStatus && previousStatus !== 'complete') {
+          // Importar o serviço de webhook
+          const { webhookService } = await import('../../services/WebhookService');
+          await webhookService.sendClientStatusChanged(clientData, previousStatus);
+        }
+      }
       
       // Atualizar a lista local
       setRegistrations(prev => 
@@ -341,11 +363,32 @@ export default function Clients() {
       
       const registrationRef = doc(db, 'registrations', registrationForPendency);
       
+      // Obter o status anterior para o webhook
+      const clientDoc = await getDoc(registrationRef);
+      const previousStatus = clientDoc.exists() ? clientDoc.data().status : null;
+      
       // Adicionar a nova pendência ao array
       await updateDoc(registrationRef, {
         pendencies: arrayUnion(newPendency),
         status: 'documents_pending'
       });
+      
+      // Obter os dados atualizados do cliente para o webhook
+      const updatedClientDoc = await getDoc(registrationRef);
+      
+      if (updatedClientDoc.exists()) {
+        const clientData = {
+          id: registrationForPendency,
+          ...updatedClientDoc.data()
+        };
+        
+        // Enviar webhook de alteração de status
+        if (previousStatus && previousStatus !== 'documents_pending') {
+          // Importar o serviço de webhook
+          const { webhookService } = await import('../../services/WebhookService');
+          await webhookService.sendClientStatusChanged(clientData, previousStatus);
+        }
+      }
       
       // Atualizar a lista local
       setRegistrations(prev => 
@@ -386,9 +429,31 @@ export default function Clients() {
     try {
       const clientRef = doc(db, 'registrations', clientToChangeStatus);
       
+      // Obter o status anterior para o webhook
+      const clientDoc = await getDoc(clientRef);
+      const previousStatus = clientDoc.exists() ? clientDoc.data().status : null;
+      
+      // Atualizar o status no banco de dados
       await updateDoc(clientRef, {
         status: status
       });
+      
+      // Obter os dados atualizados do cliente para o webhook
+      const updatedClientDoc = await getDoc(clientRef);
+      
+      if (updatedClientDoc.exists()) {
+        const clientData = {
+          id: clientToChangeStatus,
+          ...updatedClientDoc.data()
+        };
+        
+        // Enviar webhook de alteração de status
+        if (previousStatus && previousStatus !== status) {
+          // Importar o serviço de webhook
+          const { webhookService } = await import('../../services/WebhookService');
+          await webhookService.sendClientStatusChanged(clientData, previousStatus);
+        }
+      }
       
       // Atualizar a lista de clientes
       fetchRegistrations();

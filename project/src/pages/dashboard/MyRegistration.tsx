@@ -243,32 +243,19 @@ export default function MyRegistration() {
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {registration.type === 'PJ' ? (
+            {registration.type === 'PJ' && (
               <>
-                <DataItem label="CNPJ" value={formatDocument(registration.cnpj)} />
+                <DataItem icon={Building2} label="CNPJ" value={formatDocument(registration.cnpj)} />
                 <DataItem label="Razão Social" value={registration.companyName} />
-                <DataItem 
-                  label="Optante pelo Simples" 
-                  value={registration.simples ? 'Sim' : 'Não'} 
-                />
-                <DataItem 
-                  label="Data de Constituição" 
-                  value={registration.constitutionDate} 
-                />
-                <DataItem label="Faixa de Faturamento" value={registration.revenue} />
-                <DataItem 
-                  label="Representante Legal" 
-                  value={registration.legalRepresentative} 
-                />
-                <DataItem 
-                  label="CPF do Sócio" 
-                  value={formatDocument(registration.partnerCpf)} 
-                />
-                <DataItem label="Email do Sócio" value={registration.partnerEmail} />
+                <DataItem label="Representante Legal" value={registration.legalRepresentative || 'Não informado'} />
+                <DataItem label="CPF do Representante" value={formatDocument(registration.partnerCpf)} />
+                <DataItem label="Email do Representante" value={registration.partnerEmail || 'Não informado'} />
               </>
-            ) : (
+            )}
+            
+            {registration.type === 'PF' && (
               <>
-                <DataItem label="Nome" value={registration.name} />
+                <DataItem icon={User} label="Nome" value={registration.name} />
                 <DataItem label="CPF" value={formatDocument(registration.cpf)} />
                 <DataItem label="Email" value={registration.email} />
                 <DataItem 
@@ -295,6 +282,10 @@ export default function MyRegistration() {
               icon={Phone}
               label="Telefone" 
               value={`${registration.ddi} ${registration.phone}`} 
+            />
+            <DataItem 
+              label="Email" 
+              value={registration.type === 'PF' ? registration.email : registration.partnerEmail} 
             />
           </div>
         </div>
@@ -328,10 +319,22 @@ export default function MyRegistration() {
               value={formatCurrency(registration.desiredCredit)} 
             />
             
+            {/* Mostrar linha de crédito e finalidade para ambos PF e PJ */}
+            <DataItem label="Linha de Crédito" value={registration.creditLine || 'Não informado'} />
+            <DataItem label="Finalidade do Crédito" value={registration.creditReason || 'Não informado'} />
+            
+            {registration.type === 'PF' && (
+              <>
+                <DataItem 
+                  icon={AlertCircle}
+                  label="Possui Restrição" 
+                  value={registration.hasRestriction ? 'Sim' : 'Não'} 
+                />
+              </>
+            )}
+            
             {registration.type === 'PJ' && (
               <>
-                <DataItem label="Linha de Crédito" value={registration.creditLine} />
-                <DataItem label="Motivo do Crédito" value={registration.creditReason} />
                 <DataItem 
                   icon={AlertCircle}
                   label="Possui Restrição" 
@@ -339,7 +342,19 @@ export default function MyRegistration() {
                 />
                 <DataItem 
                   label="Descrição da Empresa" 
-                  value={registration.companyDescription} 
+                  value={registration.companyDescription || 'Não informado'} 
+                />
+                <DataItem 
+                  label="Faturamento" 
+                  value={registration.revenue || 'Não informado'} 
+                />
+                <DataItem 
+                  label="Data de Constituição" 
+                  value={registration.constitutionDate || 'Não informado'} 
+                />
+                <DataItem 
+                  label="Optante pelo Simples" 
+                  value={registration.simples ? 'Sim' : 'Não'} 
                 />
               </>
             )}
