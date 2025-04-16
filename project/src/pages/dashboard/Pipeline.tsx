@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Eye, Pencil, X, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import '../../styles/pipeline.css';
+import { getClientContactInfo } from '../../services/getClientContactInfo';
 
 interface Proposal {
   id: string;
@@ -32,6 +33,12 @@ interface Proposal {
     createdBy: string;
     createdByName: string;
   }[];
+  previousPipelineStatus?: 'submitted' | 'pre_analysis' | 'credit' | 'legal' | 'contract' | 'closed' | 'lost';
+  clientEmail?: string;
+  clientPhone?: string;
+  clientDDI?: string;
+  clientType?: string;
+  partnerEmail?: string;
 }
 
 const pipelineStatusLabels = {
@@ -235,6 +242,12 @@ export default function Pipeline() {
           bankName: bankName,
           bankCommission: data.bankCommission || '',
           observationsTimeline: data.observationsTimeline || [],
+          previousPipelineStatus: data.previousPipelineStatus,
+          clientEmail: data.clientEmail || '',
+          clientPhone: data.clientPhone || '',
+          clientDDI: data.clientDDI || '+55',
+          clientType: data.clientType || '',
+          partnerEmail: data.partnerEmail || '',
         };
       }) as Proposal[];
 
@@ -279,22 +292,66 @@ export default function Pipeline() {
         createdByName: user?.name || user?.email || 'Sistema',
       };
 
+      // Salvar o status anterior para o webhook
+      const previousPipelineStatus = proposal.pipelineStatus;
+
+      // Importar o serviço de webhook
+      const { webhookService } = await import('../../services/WebhookService');
+
+      // Buscar os dados do cliente de forma centralizada
+      let clientData: any = {};
+      console.log('Tipo de cliente:', proposal.clientType);
+      console.log('ID do cliente:', proposal.clientId);
+      if (proposal.clientId && (proposal.clientType === 'PF' || proposal.clientType === 'PJ')) {
+        const forcedType = proposal.clientType === 'PF' ? 'PF' : 'PJ';
+        clientData = await getClientContactInfo(proposal.clientId, forcedType);
+        console.log('DEBUG - getClientContactInfo chamada com:', proposal.clientId, forcedType);
+      }
+      console.log('Dados retornados pela função getClientContactInfo:', clientData);
+
+      // Atualizar o documento no Firestore
       await updateDoc(proposalRef, {
         pipelineStatus: targetStatus,
         observationsTimeline: [...(proposal.observationsTimeline || []), newObservation],
       });
 
+      // Atualizar o estado local
+      const updatedProposal = {
+        ...proposal,
+        pipelineStatus: targetStatus,
+        observationsTimeline: [...(proposal.observationsTimeline || []), newObservation],
+      };
+
+      // Atualizar o estado das propostas
       setProposals(prevProposals =>
         prevProposals.map(p =>
           p.id === draggedProposal
-            ? {
-                ...p,
-                pipelineStatus: targetStatus,
-                observationsTimeline: [...(p.observationsTimeline || []), newObservation],
-              }
+            ? updatedProposal
             : p
         )
       );
+
+      // Enviar o webhook com as informações básicas necessárias e os dados do cliente
+      // Adicionar a última pendência (observação) ao webhook
+      let latestObservation = null;
+      if (updatedProposal.observationsTimeline && updatedProposal.observationsTimeline.length > 0) {
+        latestObservation = updatedProposal.observationsTimeline[updatedProposal.observationsTimeline.length - 1];
+      }
+      const webhookData = {
+        id: proposal.id,
+        proposalId: proposal.id,
+        previousStatus: previousPipelineStatus,
+        newStatus: targetStatus,
+        pipelineStatus: targetStatus,
+        status: proposal.status,
+        clientName: proposal.clientName,
+        clientType: proposal.clientType || '',
+        userEmail: 'victor@cambiohoje.com.br',
+        ...clientData, // Incluir todos os dados do cliente
+        latestPending: latestObservation ? latestObservation.text : '' // Enviar apenas o texto da última pendência
+      };
+      console.log('Payload final do webhook:', webhookData);
+      webhookService.sendPipelineStatusChanged(webhookData);
     } catch (error) {
       console.error('Erro ao atualizar status da proposta:', error);
     } finally {

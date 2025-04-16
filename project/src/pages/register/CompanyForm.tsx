@@ -405,6 +405,12 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
           // Adicionar os campos de linha de crédito e finalidade
           creditLine: sanitizedData.creditLine || 'Capital de Giro',
           creditReason: sanitizedData.creditReason || 'Expandir a empresa',
+          // Adicionar dados de contato do cliente
+          ddi: sanitizedData.ddi.replace('_', ''),
+          phone: sanitizedData.phone,
+          email: sanitizedData.partnerEmail,
+          partnerEmail: sanitizedData.partnerEmail,
+          userEmail: user?.email || ''
         };
 
         console.log('Dados da proposta a serem salvos:', proposalData);

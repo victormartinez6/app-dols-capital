@@ -54,6 +54,7 @@ interface PipelineChangeData {
   proposalNumber?: string;
   clientId?: string;
   clientName?: string;
+  clientType?: string;
   previousStatus?: string;
   newStatus?: string;
   changedAt: string;
@@ -183,20 +184,43 @@ export function useWebhookTrigger() {
             
             if (previousState) {
               // Verificar se houve mudança no status
-              if (previousState.status !== proposalData.status) {
-                console.log(`Status da proposta alterado: ${proposalData.id} - ${previousState.status} -> ${proposalData.status}`);
+              const statusChanged = previousState.status !== proposalData.status;
+              // Detectar mudança de pendência (mesmo status)
+              let pendencyChanged = false;
+              // Verifica se mudou o texto/data/criador da última pendência
+              const prevPend = previousState.lastPendency || {
+                text: previousState.pendencyText,
+                createdAt: previousState.pendencyDate,
+                createdBy: previousState.pendencyCreatedBy
+              };
+              const currPend = proposalData.lastPendency || {
+                text: proposalData.pendencyText,
+                createdAt: proposalData.pendencyDate,
+                createdBy: proposalData.pendencyCreatedBy
+              };
+              if (
+                (prevPend?.text !== currPend?.text) ||
+                (prevPend?.createdAt !== currPend?.createdAt) ||
+                (prevPend?.createdBy !== currPend?.createdBy)
+              ) {
+                // Só considera mudança se estamos no status de pendência
+                if (proposalData.status === 'with_pendencies') {
+                  pendencyChanged = true;
+                }
+              }
+              if (statusChanged || pendencyChanged) {
+                console.log(`Status da proposta alterado OU nova pendência: ${proposalData.id} - ${previousState.status} -> ${proposalData.status}`);
                 await webhookService.sendProposalStatusChanged(proposalData, previousState.status || '');
               }
-              
               // Verificar se houve mudança no status do pipeline
               if (previousState.pipelineStatus !== proposalData.pipelineStatus) {
                 console.log(`Status do pipeline alterado: ${proposalData.id} - ${previousState.pipelineStatus} -> ${proposalData.pipelineStatus}`);
-                
                 const pipelineData: PipelineChangeData = {
                   proposalId: proposalData.id,
                   proposalNumber: proposalData.number,
                   clientId: proposalData.clientId,
                   clientName: proposalData.clientName,
+                  clientType: proposalData.clientType || '', // Garante que clientType é passado
                   previousStatus: previousState.pipelineStatus,
                   newStatus: proposalData.pipelineStatus,
                   changedAt: new Date().toISOString(),
@@ -206,14 +230,38 @@ export function useWebhookTrigger() {
                     role: user?.role
                   }
                 };
-                
                 await webhookService.sendPipelineStatusChanged(pipelineData);
               }
+              // Só envia o evento de atualização se NÃO houve mudança de status
+              if (!statusChanged) {
+                // Verifica se houve alteração relevante fora de pendências
+                const camposIgnorados = [
+                  'pendencyText',
+                  'pendencyDate',
+                  'pendencyCreatedBy',
+                  'lastPendency',
+                  'pendencies',
+                  'observationsTimeline',
+                  'observations',
+                  'updatedAt', // pode mudar por causa de pendência
+                ];
+                // Monta objetos só com campos relevantes para comparação
+                const cleanPrev = Object.keys(previousState)
+                  .filter(k => !camposIgnorados.includes(k))
+                  .reduce((obj, k) => { obj[k] = previousState[k]; return obj; }, {} as any);
+                const cleanCurr = Object.keys(proposalData)
+                  .filter(k => !camposIgnorados.includes(k))
+                  .reduce((obj, k) => { obj[k] = proposalData[k]; return obj; }, {} as any);
+                // Só dispara se houver diferença real
+                const houveMudancaRelevante = JSON.stringify(cleanPrev) !== JSON.stringify(cleanCurr);
+                if (houveMudancaRelevante) {
+                  console.log(`Proposta atualizada (mudança relevante, sem status): ${proposalData.id} - ${proposalData.number}`);
+                  await webhookService.sendProposalUpdated(proposalData);
+                } else {
+                  console.log(`Proposta atualizada apenas por pendência, não envia webhook de update.`);
+                }
+              }
             }
-            
-            // Sempre enviar o evento de atualização da proposta (não do cliente)
-            console.log(`Proposta atualizada: ${proposalData.id} - ${proposalData.number}`);
-            await webhookService.sendProposalUpdated(proposalData);
             
             // Atualizar o estado armazenado
             previousProposalStates.current.set(proposalData.id, { ...proposalData });

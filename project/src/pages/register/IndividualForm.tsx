@@ -373,6 +373,12 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           updatedAt: serverTimestamp(),
           creditLine: sanitizedData.creditLine || 'Capital de Giro',
           creditReason: sanitizedData.creditReason || 'Expandir a empresa',
+          // Adicionar dados de contato do cliente
+          ddi: sanitizedData.ddi.replace('_', ''),
+          phone: sanitizedData.phone,
+          email: sanitizedData.email,
+          // Adicionar e-mail do usuário logado
+          userEmail: user?.email || ''
         };
 
         console.log('Dados da proposta a serem salvos:', proposalData);

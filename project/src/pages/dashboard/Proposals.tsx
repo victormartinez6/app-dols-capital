@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, deleteDoc, where, updateDoc, getDoc, addDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, where, updateDoc, getDoc, addDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Eye, Pencil, Trash2, Search, X, Calendar, CheckCircle, XCircle, Clock, AlertTriangle, Plus, User, MessageSquarePlus, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -31,6 +31,18 @@ interface Proposal {
     createdBy: string;
     createdByName: string;
   }[];
+  pendencies?: {
+    text: string;
+    createdAt: Date | string;
+    createdBy: string;
+    createdByName: string;
+  }[];
+  lastPendency?: {
+    text: string;
+    createdAt: Date | string;
+    createdBy: string;
+    createdByName: string;
+  };
 }
 
 const proposalStatusLabels = {
@@ -94,10 +106,9 @@ export default function Proposals() {
   // Estado para controlar se o acordeon de filtros está aberto ou fechado
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Função para alternar o estado do acordeon
-  const toggleFilters = () => {
-    setFiltersOpen(!filtersOpen);
-  };
+  // Estado para o modal de pendências
+  const [showPendencyModal, setShowPendencyModal] = useState(false);
+  const [pendencyText, setPendencyText] = useState('');
 
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -204,6 +215,8 @@ export default function Proposals() {
             bankName: bankName,
             bankTradingName: bankTradingName,
             observationsTimeline: data.observationsTimeline || [],
+            pendencies: data.pendencies || [],
+            lastPendency: data.lastPendency || null
           };
         })) as Proposal[];
         setProposals(proposalsData);
@@ -243,6 +256,8 @@ export default function Proposals() {
             bankName: bankName,
             bankTradingName: bankTradingName,
             observationsTimeline: data.observationsTimeline || [],
+            pendencies: data.pendencies || [],
+            lastPendency: data.lastPendency || null
           };
         })) as Proposal[];
         setProposals(proposalsData);
@@ -285,6 +300,174 @@ export default function Proposals() {
     }
     
     setFilteredProposals(result);
+  };
+
+  const toggleFilters = () => {
+    setFiltersOpen(!filtersOpen);
+  };
+
+  const handleDeleteProposal = async () => {
+    if (!proposalToDelete) return;
+    
+    try {
+      await deleteDoc(doc(db, 'proposals', proposalToDelete));
+      setProposals(prev => prev.filter(prop => prop.id !== proposalToDelete));
+      setShowDeleteModal(false);
+      setProposalToDelete(null);
+    } catch (error) {
+      console.error('Erro ao excluir proposta:', error);
+    }
+  };
+
+  const handleViewProposal = (proposalId: string) => {
+    navigate(`/proposals/detail/${proposalId}`);
+  };
+
+  const handleEditProposal = (proposalId: string) => {
+    navigate(`/proposals/edit/${proposalId}`);
+  };
+
+  const updateProposalStatus = async (status: Proposal['status']) => {
+    if (!proposalToChangeStatus) return;
+
+    // Se o status for "with_pendencies", mostrar o modal de pendências
+    if (status === 'with_pendencies') {
+      setShowPendencyModal(true);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Encontrar a proposta que está sendo atualizada
+      const proposalToUpdate = proposals.find(p => p.id === proposalToChangeStatus);
+      
+      if (!proposalToUpdate) return;
+      
+      // Atualizar a proposta no Firestore
+      const proposalRef = doc(db, 'proposals', proposalToChangeStatus);
+      await updateDoc(proposalRef, {
+        status: status,
+        updatedAt: new Date(),
+      });
+      
+      // Atualizar também o status do cliente no Firestore, se necessário
+      if (proposalToUpdate.clientId) {
+        const clientRef = doc(db, 'registrations', proposalToUpdate.clientId);
+        await updateDoc(clientRef, {
+          status: status === 'with_pendencies' ? 'documents_pending' : 
+                 status === 'approved' ? 'complete' : 'pending',
+          updatedAt: new Date(),
+        });
+      }
+      
+      // Atualizar localmente
+      const updatedProposal: Proposal = {
+        ...proposalToUpdate,
+        status: status,
+        pendencies: [...(proposalToUpdate.pendencies || [])],
+        lastPendency: proposalToUpdate.lastPendency
+      };
+      
+      setProposals(prev => 
+        prev.map(proposal => 
+          proposal.id === proposalToChangeStatus 
+            ? updatedProposal
+            : proposal
+        )
+      );
+      
+      // Atualizar a lista filtrada
+      setFilteredProposals(prev => 
+        prev.map(proposal => 
+          proposal.id === proposalToChangeStatus 
+            ? updatedProposal
+            : proposal
+        )
+      );
+      
+      setShowStatusModal(false);
+      setProposalToChangeStatus(null);
+    } catch (error) {
+      console.error('Erro ao atualizar status da proposta:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Função para lidar com o envio de pendências
+  const handleSubmitPendency = async () => {
+    if (!proposalToChangeStatus || !pendencyText.trim()) return;
+
+    try {
+      setLoading(true);
+      
+      // Encontrar a proposta que está sendo atualizada
+      const proposalToUpdate = proposals.find(p => p.id === proposalToChangeStatus);
+      
+      if (!proposalToUpdate) return;
+      
+      // Criar objeto de pendência
+      const pendency = {
+        text: pendencyText.trim(),
+        createdAt: new Date().toISOString(),
+        createdBy: user?.id || '',
+        createdByName: user?.name || ''
+      };
+      
+      // Atualizar a proposta no Firestore
+      const proposalRef = doc(db, 'proposals', proposalToChangeStatus);
+      await updateDoc(proposalRef, {
+        status: 'with_pendencies',
+        updatedAt: new Date(),
+        pendencies: arrayUnion(pendency),
+        lastPendency: pendency
+      });
+      
+      // Atualizar também o status do cliente no Firestore
+      if (proposalToUpdate.clientId) {
+        const clientRef = doc(db, 'registrations', proposalToUpdate.clientId);
+        await updateDoc(clientRef, {
+          status: 'documents_pending',
+          updatedAt: new Date(),
+        });
+      }
+      
+      // Atualizar localmente
+      const updatedProposal: Proposal = {
+        ...proposalToUpdate,
+        status: 'with_pendencies',
+        pendencies: [...(proposalToUpdate.pendencies || []), pendency],
+        lastPendency: pendency
+      };
+      
+      setProposals(prev => 
+        prev.map(proposal => 
+          proposal.id === proposalToChangeStatus 
+            ? updatedProposal
+            : proposal
+        )
+      );
+      
+      // Atualizar a lista filtrada
+      setFilteredProposals(prev => 
+        prev.map(proposal => 
+          proposal.id === proposalToChangeStatus 
+            ? updatedProposal
+            : proposal
+        )
+      );
+      
+      // Limpar e fechar modais
+      setPendencyText('');
+      setShowPendencyModal(false);
+      setShowStatusModal(false);
+      setProposalToChangeStatus(null);
+    } catch (error) {
+      console.error('Erro ao adicionar pendência à proposta:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchClients = async () => {
@@ -336,82 +519,6 @@ export default function Proposals() {
     }
   };
 
-  const handleDeleteProposal = async () => {
-    if (!proposalToDelete) return;
-    
-    try {
-      await deleteDoc(doc(db, 'proposals', proposalToDelete));
-      setProposals(prev => prev.filter(prop => prop.id !== proposalToDelete));
-      setShowDeleteModal(false);
-      setProposalToDelete(null);
-    } catch (error) {
-      console.error('Erro ao excluir proposta:', error);
-    }
-  };
-
-  const handleViewProposal = (proposalId: string) => {
-    navigate(`/proposals/detail/${proposalId}`);
-  };
-
-  const handleEditProposal = (proposalId: string) => {
-    navigate(`/proposals/edit/${proposalId}`);
-  };
-
-  const updateProposalStatus = async (status: Proposal['status']) => {
-    if (!proposalToChangeStatus) return;
-
-    try {
-      setLoading(true);
-      
-      // Encontrar a proposta que está sendo atualizada
-      const proposalToUpdate = proposals.find(p => p.id === proposalToChangeStatus);
-      
-      if (!proposalToUpdate) return;
-      
-      // Atualizar a proposta no Firestore
-      const proposalRef = doc(db, 'proposals', proposalToChangeStatus);
-      await updateDoc(proposalRef, {
-        status: status,
-        updatedAt: new Date(),
-      });
-      
-      // Atualizar também o status do cliente no Firestore, se necessário
-      if (proposalToUpdate.clientId) {
-        const clientRef = doc(db, 'registrations', proposalToUpdate.clientId);
-        await updateDoc(clientRef, {
-          status: status === 'with_pendencies' ? 'documents_pending' : 
-                 status === 'approved' ? 'complete' : 'pending',
-          updatedAt: new Date(),
-        });
-      }
-      
-      // Atualizar localmente
-      setProposals(prev => 
-        prev.map(proposal => 
-          proposal.id === proposalToChangeStatus 
-            ? { ...proposal, status: status } 
-            : proposal
-        )
-      );
-      
-      // Atualizar a lista filtrada
-      setFilteredProposals(prev => 
-        prev.map(proposal => 
-          proposal.id === proposalToChangeStatus 
-            ? { ...proposal, status: status } 
-            : proposal
-        )
-      );
-      
-      setShowStatusModal(false);
-      setProposalToChangeStatus(null);
-    } catch (error) {
-      console.error('Erro ao atualizar status da proposta:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleDuplicateProposal = async (proposalId: string) => {
     try {
       setDuplicatingProposal(true);
@@ -435,8 +542,8 @@ export default function Proposals() {
           
           if (bankSnap.exists()) {
             const bankData = bankSnap.data();
-            originalProposal.bankName = bankData.companyName || originalProposal.bankName;
-            originalProposal.bankTradingName = bankData.tradingName || bankData.companyName || originalProposal.bankTradingName;
+            originalProposal.bankName = bankData.companyName;
+            originalProposal.bankTradingName = bankData.tradingName;
             console.log('Dados do banco atualizados para duplicação:', originalProposal.bankName);
           }
         } catch (error) {
@@ -589,7 +696,7 @@ export default function Proposals() {
       const newObservation = {
         id: uniqueId,
         text: observationText.trim(),
-        createdAt: new Date().toISOString(), // Corrigir o tratamento de datas
+        createdAt: new Date().toISOString(), 
         createdBy: user?.id || 'unknown',
         createdByName: user?.name || 'Usuário',
       };
@@ -608,6 +715,24 @@ export default function Proposals() {
     } catch (error) {
       console.error('Erro ao adicionar observação:', error);
     }
+  };
+
+  const getClientType = async (clientId: string): Promise<'PF' | 'PJ'> => {
+    if (!clientId) return 'PF'; // Valor padrão se não houver ID
+    
+    try {
+      const clientRef = doc(db, 'registrations', clientId);
+      const clientSnap = await getDoc(clientRef);
+      
+      if (clientSnap.exists()) {
+        const clientData = clientSnap.data();
+        return clientData.type === 'PJ' ? 'PJ' : 'PF';
+      }
+    } catch (error) {
+      console.error('Erro ao obter tipo do cliente:', error);
+    }
+    
+    return 'PF'; // Valor padrão em caso de erro
   };
 
   return (
@@ -1323,6 +1448,58 @@ export default function Proposals() {
                 }`}
               >
                 Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Pendências */}
+      {showPendencyModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h3 className="text-xl font-semibold text-white mb-4">
+              Adicionar Pendência
+            </h3>
+            <p className="text-gray-300 mb-4">
+              Descreva a pendência que precisa ser resolvida para esta proposta:
+            </p>
+            <textarea
+              className="w-full bg-gray-800 border border-gray-700 rounded-md p-3 text-white mb-4 h-32"
+              placeholder="Descreva a pendência aqui..."
+              value={pendencyText}
+              onChange={(e) => setPendencyText(e.target.value)}
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowPendencyModal(false);
+                  setPendencyText('');
+                }}
+                className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSubmitPendency}
+                disabled={!pendencyText.trim() || loading}
+                className={`px-4 py-2 rounded-md ${
+                  !pendencyText.trim() || loading
+                    ? 'bg-gray-500 cursor-not-allowed'
+                    : 'bg-[#01FBA1] text-black hover:bg-[#00e090]'
+                }`}
+              >
+                {loading ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Salvando...
+                  </span>
+                ) : (
+                  'Salvar Pendência'
+                )}
               </button>
             </div>
           </div>

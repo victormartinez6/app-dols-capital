@@ -334,6 +334,41 @@ export default function Webhooks() {
     }
   };
 
+  const renderPipelineStatusChangedData = (data: any) => {
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="font-semibold">ID da Proposta:</div>
+          <div>{data.id || data.proposalId || 'N/A'}</div>
+          
+          <div className="font-semibold">Status Anterior:</div>
+          <div>{data.oldPipelineStatus || data.oldStatus || 'N/A'}</div>
+          
+          <div className="font-semibold">Novo Status:</div>
+          <div>{data.newPipelineStatus || data.newStatus || 'N/A'}</div>
+          
+          <div className="font-semibold">Coluna Anterior:</div>
+          <div>{data.oldPipelineColumn || 'N/A'}</div>
+          
+          <div className="font-semibold">Nova Coluna:</div>
+          <div>{data.newPipelineColumn || 'N/A'}</div>
+          
+          <div className="font-semibold">Status da Proposta:</div>
+          <div>{data.proposalStatus || 'N/A'}</div>
+          
+          <div className="font-semibold">Nome do Cliente:</div>
+          <div>{data.clientName || 'N/A'}</div>
+          
+          <div className="font-semibold">E-mail do Cliente:</div>
+          <div>{data.clientEmail || 'N/A'}</div>
+          
+          <div className="font-semibold">Telefone do Cliente:</div>
+          <div>{data.clientDDI || '+55'} {data.clientPhone || 'N/A'}</div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="p-6 bg-black rounded-lg shadow">

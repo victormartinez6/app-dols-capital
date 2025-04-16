@@ -15,7 +15,7 @@ interface Proposal {
   desiredCredit: number;
   hasProperty: boolean;
   propertyValue: number;
-  status: 'pending' | 'approved' | 'rejected' | 'in_analysis';
+  status: 'pending' | 'approved' | 'rejected' | 'in_analysis' | 'with_pendencies';
   pipelineStatus: 'submitted' | 'pre_analysis' | 'credit' | 'legal' | 'contract';
   createdAt: Date;
   userId: string;
@@ -31,6 +31,12 @@ interface Proposal {
     createdBy: string;
     createdByName: string;
   }[];
+  pendencies?: {
+    text: string;
+    createdAt: Date | string;
+    createdBy: string;
+    createdByName: string;
+  }[];
 }
 
 const proposalStatusLabels = {
@@ -38,6 +44,7 @@ const proposalStatusLabels = {
   approved: 'Aprovada',
   rejected: 'Rejeitada',
   in_analysis: 'Em Análise',
+  with_pendencies: 'Com Pendências',
 };
 
 const proposalStatusColors = {
@@ -45,6 +52,7 @@ const proposalStatusColors = {
   approved: 'text-green-400 bg-green-400/10',
   rejected: 'text-red-400 bg-red-400/10',
   in_analysis: 'text-blue-400 bg-blue-400/10',
+  with_pendencies: 'text-orange-400 bg-orange-400/10',
 };
 
 const pipelineStatusLabels = {
@@ -141,6 +149,7 @@ export default function ProposalDetail() {
             hasRestriction: data.hasRestriction || false,
             observations: data.observations || '',
             observationsTimeline: safeObservationsTimeline,
+            pendencies: data.pendencies || [],
           };
           
           console.log('Proposta formatada:', proposalData);
@@ -438,6 +447,45 @@ export default function ProposalDetail() {
           <p className="text-sm text-gray-400">Nenhuma observação registrada.</p>
         )}
       </div>
+
+      {/* Pendências */}
+      {proposal?.pendencies && proposal.pendencies.length > 0 && (
+        <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
+          <h3 className="text-lg md:text-xl font-semibold text-white">Pendências</h3>
+          <div className="space-y-4">
+            {proposal.pendencies.map((pendency) => (
+              <div key={pendency.text} className="bg-gray-900 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
+                  <div className="font-medium text-white mb-1 sm:mb-0">{pendency.createdByName}</div>
+                  <div className="text-xs text-gray-400">
+                    <span>
+                      {(() => {
+                        try {
+                          if (typeof pendency.createdAt === 'object' && 'toDate' in pendency.createdAt) {
+                            const firestoreTimestamp = pendency.createdAt as { toDate(): Date };
+                            return format(firestoreTimestamp.toDate(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          } else if (pendency.createdAt instanceof Date) {
+                            return format(pendency.createdAt, "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          } else if (typeof pendency.createdAt === 'number') {
+                            return format(new Date(pendency.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          } else if (typeof pendency.createdAt === 'string') {
+                            return format(new Date(pendency.createdAt), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                          }
+                          return format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+                        } catch (error) {
+                          console.error('Erro ao formatar data:', error, pendency.createdAt);
+                          return 'Data não disponível';
+                        }
+                      })()}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-300 whitespace-pre-wrap">{pendency.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Modal de Adicionar Observação */}
       {showObservationModal && (
