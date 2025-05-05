@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotifications, Notification } from '../contexts/NotificationContext';
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +11,21 @@ export default function NotificationBell() {
   const [isAnimating, setIsAnimating] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  // Filtrar notificações: mostrar todas as não lidas ou as 5 últimas lidas
+  const filteredNotifications = useMemo(() => {
+    // Primeiro, separar as notificações lidas e não lidas
+    const unreadNotifications = notifications.filter(notification => !notification.read);
+    const readNotifications = notifications.filter(notification => notification.read);
+    
+    // Se houver notificações não lidas, mostrar todas elas
+    if (unreadNotifications.length > 0) {
+      return unreadNotifications;
+    }
+    
+    // Caso contrário, mostrar apenas as 5 últimas lidas
+    return readNotifications.slice(0, 5);
+  }, [notifications]);
 
   // Fechar o dropdown quando clicar fora dele
   useEffect(() => {
@@ -77,7 +92,9 @@ export default function NotificationBell() {
         <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 max-h-[80vh] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Notificações
+              {unreadCount > 0 
+                ? `Notificações não lidas (${unreadCount})` 
+                : "Últimas 5 notificações"}
             </h3>
             {unreadCount > 0 && (
               <button
@@ -90,9 +107,9 @@ export default function NotificationBell() {
           </div>
 
           <div className="overflow-y-auto max-h-[60vh]">
-            {notifications.length > 0 ? (
+            {filteredNotifications.length > 0 ? (
               <div>
-                {notifications.map((notification) => (
+                {filteredNotifications.map((notification) => (
                   <div
                     key={notification.id}
                     onClick={() => handleNotificationClick(notification)}

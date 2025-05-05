@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, Users, FileText, AlertTriangle, DollarSign, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
-import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { collection, query, getDocs, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -81,10 +81,11 @@ export default function DashboardHome() {
     pjClients: 0,
     incompleteClients: 0,
   });
-  const [pipelineData, setPipelineData] = useState<any[]>([]);
+  const [pipelineData, setPipelineData] = useState<any>({});
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [recentProposals, setRecentProposals] = useState<Proposal[]>([]);
   const [recentClients, setRecentClients] = useState<Client[]>([]);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   const { user } = useAuth();
 
@@ -92,12 +93,14 @@ export default function DashboardHome() {
     const fetchData = async () => {
       try {
         setLoading(true);
+        console.log("Iniciando busca de dados...");
         await Promise.all([
           fetchProposals(),
           fetchClients(),
           fetchRecentProposals(),
           fetchRecentClients()
         ]);
+        console.log("Dados carregados com sucesso!");
         setLoading(false);
       } catch (error) {
         console.error("Erro ao buscar dados:", error);
@@ -115,6 +118,19 @@ export default function DashboardHome() {
       generateMonthlyData();
     }
   }, [proposals, clients]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  const isMobile = windowWidth < 768;
 
   const fetchProposals = async () => {
     try {
@@ -155,35 +171,65 @@ export default function DashboardHome() {
 
   const fetchClients = async () => {
     try {
-      let q;
+      let clientsData: Client[] = [];
       
       // Se o usuário for cliente, não mostrar outros clientes
       if (user?.role === 'client') {
-        q = query(collection(db, 'clients'), where('userId', '==', user.id));
+        const q = query(collection(db, 'registrations'), where('userId', '==', user.id));
+        const querySnapshot = await getDocs(q);
+        
+        clientsData = processClientData(querySnapshot);
       } else {
-        // Se for gerente ou admin, mostrar todos os clientes
-        q = query(collection(db, 'clients'));
+        // Buscar na coleção 'registrations'
+        const registrationsQuery = query(collection(db, 'registrations'));
+        const registrationsSnapshot = await getDocs(registrationsQuery);
+        console.log(`Encontrados ${registrationsSnapshot.docs.length} clientes na coleção 'registrations'`);
+        
+        clientsData = processClientData(registrationsSnapshot);
       }
       
-      const querySnapshot = await getDocs(q);
-      
-      const clientsData = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || 'Nome não disponível',
-          email: data.email || '',
-          phone: data.phone || '',
-          type: data.type || 'PF',
-          status: data.status || 'incomplete',
-          createdAt: data.createdAt,
-        };
-      }) as Client[];
-
+      console.log(`Total de clientes encontrados: ${clientsData.length}`);
       setClients(clientsData);
     } catch (error) {
       console.error('Erro ao buscar clientes:', error);
     }
+  };
+
+  // Função auxiliar para processar dados de clientes
+  const processClientData = (snapshot: any) => {
+    return snapshot.docs.map((doc: any) => {
+      const data = doc.data();
+      console.log('Dados do cliente:', data);
+      
+      // Determinar o tipo de cliente com base nos campos disponíveis
+      let clientType = 'PF';
+      if (data.type) {
+        clientType = data.type;
+      } else if (data.cnpj || data.companyName || data.tradingName) {
+        clientType = 'PJ';
+      }
+      
+      // Determinar o status do cliente
+      let clientStatus = 'incomplete';
+      if (data.status) {
+        clientStatus = data.status;
+      } else if (
+        (clientType === 'PF' && data.cpf && data.name && data.email) ||
+        (clientType === 'PJ' && data.cnpj && data.companyName && data.legalRepresentative)
+      ) {
+        clientStatus = 'complete';
+      }
+      
+      return {
+        id: doc.id,
+        name: data.name || data.companyName || data.legalRepresentative || 'Nome não disponível',
+        email: data.email || data.partnerEmail || '',
+        phone: data.phone || '',
+        type: clientType,
+        status: clientStatus,
+        createdAt: data.createdAt || new Date(),
+      };
+    });
   };
 
   const fetchRecentProposals = async () => {
@@ -241,36 +287,27 @@ export default function DashboardHome() {
 
   const fetchRecentClients = async () => {
     try {
-      let q;
+      let recentClientsData: Client[] = [];
       
       if (user?.role === 'client') {
         // Clientes não veem outros clientes
         setRecentClients([]);
         return;
-      } else {
-        q = query(
-          collection(db, 'clients'),
-          orderBy('createdAt', 'desc'),
-          limit(5)
-        );
       }
       
-      const querySnapshot = await getDocs(q);
+      // Buscar na coleção 'registrations'
+      const registrationsQuery = query(
+        collection(db, 'registrations'),
+        orderBy('createdAt', 'desc'),
+        limit(5)
+      );
+      const registrationsSnapshot = await getDocs(registrationsQuery);
+      console.log(`Encontrados ${registrationsSnapshot.docs.length} clientes recentes na coleção 'registrations'`);
       
-      const clientsData = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || 'Nome não disponível',
-          email: data.email || '',
-          phone: data.phone || '',
-          type: data.type || 'PF',
-          status: data.status || 'incomplete',
-          createdAt: data.createdAt,
-        };
-      }) as Client[];
-
-      setRecentClients(clientsData);
+      recentClientsData = processClientData(registrationsSnapshot);
+      
+      console.log(`Total de clientes recentes encontrados: ${recentClientsData.length}`);
+      setRecentClients(recentClientsData);
     } catch (error) {
       console.error('Erro ao buscar clientes recentes:', error);
     }
@@ -328,16 +365,30 @@ export default function DashboardHome() {
   const generatePipelineData = () => {
     const pipelineStatuses = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract'];
     
-    const data = pipelineStatuses.map(status => {
+    // Criar dados para o gráfico (apenas itens com valor > 0)
+    const chartData = pipelineStatuses.map(status => {
       const count = proposals.filter(p => p.pipelineStatus === status).length;
       return {
         name: pipelineStatusLabels[status as keyof typeof pipelineStatusLabels],
         value: count,
-        color: pipelineStatusColors[status as keyof typeof pipelineStatusColors]
+        color: pipelineStatusColors[status as keyof typeof pipelineStatusLabels]
+      };
+    }).filter(item => item.value > 0); // Filtrar apenas itens com valor maior que zero para o gráfico
+    
+    // Criar dados completos para a legenda (todos os status)
+    const legendData = pipelineStatuses.map(status => {
+      const count = proposals.filter(p => p.pipelineStatus === status).length;
+      return {
+        name: pipelineStatusLabels[status as keyof typeof pipelineStatusLabels],
+        value: count,
+        color: pipelineStatusColors[status as keyof typeof pipelineStatusLabels]
       };
     });
     
-    setPipelineData(data);
+    setPipelineData({
+      chartData: chartData,
+      legendData: legendData
+    });
   };
 
   const generateMonthlyData = () => {
@@ -506,29 +557,43 @@ export default function DashboardHome() {
               <PieChartIcon className="h-5 w-5 text-gray-400" />
             </div>
           </div>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pipelineData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {pipelineData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="flex flex-col h-auto md:h-[450px]">
+            <div className="h-[320px] md:h-[370px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                  <Pie
+                    data={pipelineData.chartData || []}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={isMobile ? 50 : 75}
+                    outerRadius={isMobile ? 75 : 125}
+                    fill="#8884d8"
+                    paddingAngle={5}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    {(pipelineData.chartData || []).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 px-2 pb-2">
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-3">
+                {(pipelineData.legendData || []).map((item: any, index: number) => (
+                  <div key={index} className="flex items-center">
+                    <div 
+                      className="w-3 h-3 rounded-full mr-1" 
+                      style={{ backgroundColor: item.color }}
+                    ></div>
+                    <span className="text-xs md:text-sm text-gray-300">{item.name} ({item.value})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -540,18 +605,31 @@ export default function DashboardHome() {
               <BarChart2 className="h-5 w-5 text-gray-400" />
             </div>
           </div>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="name" stroke="#9CA3AF" />
-                <YAxis stroke="#9CA3AF" />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Bar dataKey="propostas" name="Propostas" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="desiredCredit" name="Crédito (R$)" fill="#10B981" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="flex flex-col h-auto md:h-[450px]">
+            <div className="h-[320px] md:h-[370px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="name" stroke="#9CA3AF" fontSize={isMobile ? 10 : 12} tickMargin={5} />
+                  <YAxis stroke="#9CA3AF" fontSize={isMobile ? 10 : 12} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="propostas" name="Propostas" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="desiredCredit" name="Crédito (R$)" fill="#10B981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 px-2 pb-2">
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-3">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full mr-1 bg-[#3B82F6]"></div>
+                  <span className="text-xs md:text-sm text-gray-300">Propostas</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 rounded-full mr-1 bg-[#10B981]"></div>
+                  <span className="text-xs md:text-sm text-gray-300">Crédito (R$)</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

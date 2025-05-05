@@ -1486,7 +1486,7 @@ export default function Proposals() {
                 className={`px-4 py-2 rounded-md ${
                   !pendencyText.trim() || loading
                     ? 'bg-gray-500 cursor-not-allowed'
-                    : 'bg-[#01FBA1] text-black hover:bg-[#00e090]'
+                    : 'bg-[#D8B25A] text-black hover:bg-[#00e090]'
                 }`}
               >
                 {loading ? (

@@ -178,7 +178,7 @@ export default function CurrencyInput({
         fixedDecimalScale
         allowNegative={false}
         getInputRef={setRefs}
-        className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm ${className}`}
+        className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm ${className}`}
         placeholder={placeholder || "R$ 0,00"}
         disabled={disabled}
         value={displayValue === "0,00" || displayValue === "0" ? undefined : displayValue}

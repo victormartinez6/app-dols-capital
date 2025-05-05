@@ -117,7 +117,7 @@ export default function Login() {
                   <input
                     {...register('name')}
                     type="text"
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Nome completo"
                     disabled={isLoading}
                   />
@@ -137,7 +137,7 @@ export default function Login() {
                 <input
                   {...register('email')}
                   type="email"
-                  className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                  className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                   placeholder="Seu e-mail"
                   disabled={isLoading}
                 />
@@ -157,7 +157,7 @@ export default function Login() {
                   <input
                     {...register('password')}
                     type={showPassword ? "text" : "password"}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 pr-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 pr-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Sua senha"
                     disabled={isLoading}
                   />
@@ -189,7 +189,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={toggleForgotPassword}
-                className="text-[#01FBA1] hover:text-[#00df8e] text-sm font-medium flex items-center"
+                className="text-[#D8B25A] hover:text-[#FFEEA8] text-sm font-medium flex items-center"
                 disabled={isLoading}
               >
                 <KeyRound className="h-4 w-4 mr-1" />
@@ -203,7 +203,7 @@ export default function Login() {
               type="submit"
               className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md ${
                 isLoading ? 'bg-gray-300 text-gray-600' : 'text-black bg-white hover:bg-gray-100'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] shadow-md transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02]`}
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A] shadow-md transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02]`}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -233,9 +233,9 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setIsRegistering(!isRegistering)}
-                className={`group relative w-full flex justify-center py-3 px-4 border border-[#01FBA1] text-sm font-medium rounded-md text-[#01FBA1] bg-transparent ${
+                className={`group relative w-full flex justify-center py-3 px-4 border border-[#D8B25A] text-sm font-medium rounded-md text-[#D8B25A] bg-transparent ${
                   isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black hover:bg-opacity-50'
-                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] transition-all duration-300 hover:shadow-[0_0_15px_rgba(1,251,161,0.4)] hover:-translate-y-1 hover:scale-[1.02]`}
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A] transition-all duration-300 hover:shadow-[0_0_15px_rgba(216,178,90,0.4)] hover:-translate-y-1 hover:scale-[1.02]`}
                 disabled={isLoading}
               >
                 {isRegistering ? (
@@ -276,8 +276,8 @@ export default function Login() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
           <div className="bg-black bg-opacity-80 p-8 rounded-lg shadow-2xl flex flex-col items-center">
             <div className="relative w-24 h-24 mb-4">
-              <div className="absolute top-0 left-0 w-full h-full border-4 border-[#01FBA1] border-opacity-20 rounded-full"></div>
-              <div className="absolute top-0 left-0 w-full h-full border-4 border-transparent border-t-[#01FBA1] rounded-full animate-spin"></div>
+              <div className="absolute top-0 left-0 w-full h-full border-4 border-[#D8B25A] border-opacity-20 rounded-full"></div>
+              <div className="absolute top-0 left-0 w-full h-full border-4 border-transparent border-t-[#D8B25A] rounded-full animate-spin"></div>
               <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center">
                 <Logo className="h-12 w-auto" variant="white" />
               </div>

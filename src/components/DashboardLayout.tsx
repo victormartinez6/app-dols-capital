@@ -7,18 +7,20 @@ import { Logo } from './Logo';
 import NotificationBell from './NotificationBell';
 import MenuNotificationBell from './MenuNotificationBell';
 
-const NavItem = ({ to, icon: Icon, children, isActive, notificationBadge }: { 
+const NavItem = ({ to, icon: Icon, children, isActive, notificationBadge, onClick }: { 
   to: string; 
   icon: React.ElementType; 
   children: React.ReactNode;
   isActive: boolean;
   notificationBadge?: React.ReactNode;
+  onClick?: () => void;
 }) => (
   <Link
     to={to}
     className={`group flex items-center px-6 py-3 text-gray-600 dark:text-gray-300 transition-colors ${
       isActive ? 'bg-[#A4A4A4] text-white dark:bg-[#A4A4A4] dark:text-white' : 'hover:bg-black dark:hover:bg-black'
     }`}
+    onClick={onClick}
   >
     <div className="transition-transform duration-200">
       <Icon className={`h-5 w-5 transition-transform duration-200 ${!isActive && 'group-hover:scale-125'}`} />
@@ -138,6 +140,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 icon={item.icon}
                 isActive={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
                 notificationBadge={item.showNotification ? <MenuNotificationBell filterType={item.notificationType} /> : undefined}
+                onClick={mobileMenuOpen ? toggleMobileMenu : undefined}
               >
                 {item.label}
               </NavItem>

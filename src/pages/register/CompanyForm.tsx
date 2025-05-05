@@ -490,7 +490,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                       type="text"
                       {...register('cnpj')}
                       onBlur={(e: React.FocusEvent<HTMLInputElement>) => handleCNPJSearch(e.target.value)}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="00.000.000/0000-00"
                     />
                     {searchingCNPJ && (
@@ -512,7 +512,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('companyName')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Razão Social"
                   />
                   {errors.companyName && (
@@ -526,7 +526,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                       type="checkbox"
                       {...register('simples')}
                       disabled={initialLoading}
-                      className="h-4 w-4 text-[#01FBA1] focus:ring-[#01FBA1] border-gray-300 rounded bg-black"
+                      className="h-4 w-4 text-[#D8B25A] focus:ring-[#D8B25A] border-gray-300 rounded bg-black"
                     />
                     <span className="ml-2 text-gray-300">
                       Optante pelo Simples Nacional
@@ -542,7 +542,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="date"
                     {...register('constitutionDate')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                   />
                   {errors.constitutionDate && (
                     <p className="mt-1 text-sm text-red-400">{errors.constitutionDate.message}</p>
@@ -556,7 +556,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                   <select
                     {...register('revenue')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                   >
                     <option value="">Selecione uma faixa</option>
                     {revenueRanges.map((range) => (
@@ -585,7 +585,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('legalRepresentative')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Nome do Representante Legal"
                   />
                   {errors.legalRepresentative && (
@@ -602,7 +602,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('partnerCpf')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="000.000.000-00"
                   />
                   {errors.partnerCpf && (
@@ -618,7 +618,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="email"
                     {...register('partnerEmail')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="exemplo@email.com"
                   />
                   {errors.partnerEmail && (
@@ -636,7 +636,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                       {...register('ddi')}
                       disabled={initialLoading}
                       defaultValue="+55"
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     />
                     {errors.ddi && (
                       <p className="mt-1 text-sm text-red-400">{errors.ddi.message}</p>
@@ -652,7 +652,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                       type="text"
                       {...register('phone')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="(00) 00000-0000"
                     />
                     {errors.phone && (
@@ -680,7 +680,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     {...register('cep')}
                     disabled={initialLoading}
                     onBlur={(e: React.FocusEvent<HTMLInputElement>) => searchCep(e.target.value)}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="00000-000"
                   />
                   {errors.cep && (
@@ -696,7 +696,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('street')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Logradouro"
                   />
                   {errors.street && (
@@ -712,7 +712,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('number')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Número"
                   />
                   {errors.number && (
@@ -728,7 +728,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('complement')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Complemento (opcional)"
                   />
                 </div>
@@ -741,7 +741,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('neighborhood')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Bairro"
                   />
                   {errors.neighborhood && (
@@ -757,7 +757,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('city')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Cidade"
                   />
                   {errors.city && (
@@ -773,7 +773,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     type="text"
                     {...register('state')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="UF"
                     maxLength={2}
                   />
@@ -814,7 +814,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     <select
                       id="creditLine"
                       {...register('creditLine')}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     >
                       <option value="Capital de Giro">Capital de Giro</option>
                       <option value="Antecipação de Recebíveis">Antecipação de Recebíveis</option>
@@ -837,7 +837,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     <select
                       id="creditReason"
                       {...register('creditReason')}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     >
                       <option value="Expandir a empresa">Expandir a empresa</option>
                       <option value="Comprar maquinário ou equipamentos">Comprar maquinário ou equipamentos</option>
@@ -854,7 +854,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                       type="checkbox"
                       {...register('hasRestriction')}
                       disabled={initialLoading}
-                      className="h-4 w-4 text-[#01FBA1] focus:ring-[#01FBA1] border-gray-300 rounded bg-black"
+                      className="h-4 w-4 text-[#D8B25A] focus:ring-[#D8B25A] border-gray-300 rounded bg-black"
                     />
                     <span className="ml-2 text-gray-300">
                       Empresa possui restrição financeira?
@@ -870,7 +870,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
                     {...register('companyDescription')}
                     disabled={initialLoading}
                     rows={4}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Descreva brevemente a empresa, seu ramo de atuação e principais produtos/serviços"
                   />
                   {errors.companyDescription && (
@@ -952,7 +952,7 @@ export default function CompanyForm({ isEditing = false }: CompanyFormProps) {
         <button
           type="submit"
           form="company-form"
-          className="px-4 py-2 border border-transparent rounded-md shadow-lg text-sm font-medium text-black bg-[#01FBA1] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] flex items-center"
+          className="px-4 py-2 border border-transparent rounded-md shadow-lg text-sm font-medium text-black bg-[#D8B25A] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A] flex items-center"
         >
           <Save className="h-4 w-4 mr-2" />
           Salvar Cadastro

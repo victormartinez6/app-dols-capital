@@ -500,7 +500,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     mask="999.999.999-99"
                     {...register('cpf')}
                     disabled={isEditMode || initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="000.000.000-00"
                   />
                   {errors.cpf && (
@@ -513,7 +513,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     type="text"
                     {...register('name')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Nome completo"
                   />
                   {errors.name && (
@@ -526,7 +526,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     type="email"
                     {...register('email')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="exemplo@email.com"
                   />
                   {errors.email && (
@@ -540,7 +540,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                       mask="+99"
                       {...register('ddi')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="+55"
                     />
                     {errors.ddi && (
@@ -552,7 +552,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                       mask="(99) 99999-9999"
                       {...register('phone')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="(00) 00000-0000"
                     />
                     {errors.phone && (
@@ -574,7 +574,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     mask="99999-999"
                     {...register('cep')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="00000-000"
                     onBlur={(e: React.FocusEvent<HTMLInputElement>) => searchCep(e.target.value)}
                   />
@@ -588,7 +588,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     type="text"
                     {...register('street')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Logradouro"
                   />
                   {errors.street && (
@@ -602,7 +602,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                       type="text"
                       {...register('number')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="Número"
                     />
                     {errors.number && (
@@ -614,7 +614,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                       type="text"
                       {...register('complement')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="Complemento (opcional)"
                     />
                   </div>
@@ -625,7 +625,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     type="text"
                     {...register('neighborhood')}
                     disabled={initialLoading}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     placeholder="Bairro"
                   />
                   {errors.neighborhood && (
@@ -639,7 +639,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                       type="text"
                       {...register('city')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="Cidade"
                     />
                     {errors.city && (
@@ -651,7 +651,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                       type="text"
                       {...register('state')}
                       disabled={initialLoading}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                       placeholder="UF"
                       maxLength={2}
                     />
@@ -675,7 +675,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     id="hasProperty"
                     {...register('hasProperty')}
                     disabled={initialLoading}
-                    className="h-4 w-4 text-[#01FBA1] focus:ring-[#01FBA1] border-gray-300 rounded bg-black"
+                    className="h-4 w-4 text-[#D8B25A] focus:ring-[#D8B25A] border-gray-300 rounded bg-black"
                   />
                   <label className="text-gray-300" htmlFor="hasProperty">Possui Imóvel?</label>
                 </div>
@@ -704,7 +704,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                           disabled={!hasProperty || initialLoading}
                           register={register}
                           setValue={setValue}
-                          className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm ${!hasProperty ? 'opacity-50' : ''}`}
+                          className={`appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm ${!hasProperty ? 'opacity-50' : ''}`}
                           placeholder="Valor do imóvel"
                         />
                       )}
@@ -734,7 +734,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                         name="desiredCredit"
                         register={register}
                         setValue={setValue}
-                        className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                        className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                         placeholder="Valor desejado"
                         error={errors.desiredCredit?.message}
                       />
@@ -750,7 +750,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     <select
                       id="creditLine"
                       {...register('creditLine')}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     >
                       <option value="Capital de Giro">Capital de Giro</option>
                       <option value="Investimento">Investimento</option>
@@ -771,7 +771,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                     <select
                       id="creditReason"
                       {...register('creditReason')}
-                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                     >
                       <option value="Expandir a empresa">Expandir a empresa</option>
                       <option value="Modernizar a empresa">Modernizar a empresa</option>
@@ -855,7 +855,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           type="submit"
           disabled={loading}
           form="individual-form"
-          className="px-4 py-2 border border-transparent rounded-md shadow-lg text-sm font-medium text-black bg-[#01FBA1] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1] flex items-center"
+          className="px-4 py-2 border border-transparent rounded-md shadow-lg text-sm font-medium text-black bg-[#D8B25A] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A] flex items-center"
         >
           {loading ? (
             <>

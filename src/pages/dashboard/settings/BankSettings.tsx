@@ -255,7 +255,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="email"
                 {...register(`${fieldName}.${index}` as any)}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder={`E-mail ${index + 1}`}
               />
               {errors[fieldName] && errors[fieldName]?.[index] && (
@@ -287,14 +287,14 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
                 <InputMask
                   mask="99.999.999/9999-99"
                   {...register('cnpj')}
-                  className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                  className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                   placeholder="00.000.000/0000-00"
                 />
                 <button
                   type="button"
                   onClick={searchCompanyByCNPJ}
                   disabled={cnpjLoading}
-                  className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-black bg-[#01FBA1] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1]"
+                  className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-black bg-[#D8B25A] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A]"
                 >
                   {cnpjLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -316,7 +316,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('companyName')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Razão Social do Banco"
               />
               {errors.companyName && (
@@ -332,7 +332,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('tradingName')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Nome Fantasia do Banco"
               />
               {errors.tradingName && (
@@ -349,7 +349,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
                 <input
                   type="text"
                   {...register('commission')}
-                  className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                  className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                   placeholder="0,00"
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -373,7 +373,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('contactName')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Nome do Contato"
               />
               {errors.contactName && (
@@ -386,7 +386,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <InputMask
                 mask="(99) 99999-9999"
                 {...register('contactPhone')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Telefone do Contato"
               />
               {errors.contactPhone && (
@@ -399,7 +399,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="email"
                 {...register('contactEmail')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="E-mail do Contato"
               />
               {errors.contactEmail && (
@@ -420,14 +420,14 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
                 <InputMask
                   mask="99999-999"
                   {...register('cep')}
-                  className="appearance-none rounded-l-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                  className="appearance-none rounded-l-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                   placeholder="CEP"
                 />
                 <button
                   type="button"
                   onClick={searchAddressByCEP}
                   disabled={cepLoading}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-r-md shadow-sm text-sm font-medium text-black bg-[#01FBA1] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1]"
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-r-md shadow-sm text-sm font-medium text-black bg-[#D8B25A] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A]"
                 >
                   {cepLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -446,7 +446,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('street')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Logradouro"
               />
               {errors.street && (
@@ -459,7 +459,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('number')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Número"
               />
               {errors.number && (
@@ -472,7 +472,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('complement')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Complemento"
               />
               {errors.complement && (
@@ -485,7 +485,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('neighborhood')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Bairro"
               />
               {errors.neighborhood && (
@@ -498,7 +498,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('city')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="Cidade"
               />
               {errors.city && (
@@ -511,7 +511,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
               <input
                 type="text"
                 {...register('state')}
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#01FBA1] focus:border-[#01FBA1] focus:z-10 shadow-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
                 placeholder="UF"
                 maxLength={2}
               />
@@ -549,7 +549,7 @@ export default function BankSettings({ bankId, onSaved }: BankSettingsProps) {
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-black bg-[#01FBA1] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#01FBA1]"
+            className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-black bg-[#D8B25A] hover:bg-[#00e090] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A]"
           >
             {loading ? (
               <>
