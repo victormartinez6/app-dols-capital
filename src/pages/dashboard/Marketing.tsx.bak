@@ -1,0 +1,1369 @@
+import React, { useState, useEffect } from 'react';
+import { collection, query, getDocs, doc, deleteDoc, addDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from '../../lib/firebase';
+import { useAuth } from '../../contexts/AuthContext';
+import { Image, FileText, Film, PresentationIcon, Upload, Download, Trash2, Eye, Plus, X, Bold, Italic, List, CheckSquare, Smile, Archive } from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import JSZip from 'jszip';
+
+// Tipos
+interface MarketingFile {
+  id: string;
+  name: string;
+  category: 'artes' | 'documentos' | 'apresentacoes' | 'videos';
+  fileUrl: string;
+  thumbnailUrl?: string;
+  fileType: string;
+  fileSize: number;
+  createdAt: Date;
+  createdBy: string;
+  description?: string;
+  isCarousel?: boolean;
+  carouselUrls?: string[];
+  imageCount?: number;
+}
+
+// Interface para grupos de arquivos por data
+interface FileGroup {
+  dateKey: string;
+  displayDate: string;
+  files: MarketingFile[];
+}
+
+// Componente principal
+export default function Marketing() {
+  const { user } = useAuth();
+  const [files, setFiles] = useState<MarketingFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState<'artes' | 'documentos' | 'apresentacoes' | 'videos'>('artes');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<MarketingFile | null>(null);
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [uploadCategory, setUploadCategory] = useState<'artes' | 'documentos' | 'apresentacoes' | 'videos'>('artes');
+  const [fileDescription, setFileDescription] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [uploadType, setUploadType] = useState<'single' | 'carousel'>('single');
+  const [multipleFiles, setMultipleFiles] = useState<File[]>([]);
+  const [textFormatting, setTextFormatting] = useState({
+    bold: false,
+    italic: false,
+    list: false
+  });
+
+  // Verificar permissões do usuário
+  const isAdmin = user?.roleKey === 'admin';
+  const canUpload = isAdmin; // Apenas administradores podem fazer upload
+  const isPartner = user?.roleKey === 'parceiro';
+  const isManager = user?.roleKey === 'gerente';
+  
+  // Chave para armazenamento local dos arquivos
+  const LOCAL_STORAGE_KEY = 'marketingFiles';
+  
+  // Buscar arquivos do armazenamento local e Firestore
+  useEffect(() => {
+    // Primeiro, tentar carregar do localStorage para exibição imediata
+    const loadFromLocalStorage = () => {
+      try {
+        const savedFiles = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedFiles) {
+          const parsedFiles = JSON.parse(savedFiles) as MarketingFile[];
+          // Converter strings de data para objetos Date
+          const filesWithDates = parsedFiles.map(file => ({
+            ...file,
+            createdAt: new Date(file.createdAt)
+          }));
+          setFiles(filesWithDates);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar do localStorage:', e);
+      }
+    };
+    
+    // Carregar do localStorage primeiro para exibição rápida
+    loadFromLocalStorage();
+    
+    // Depois buscar dados atualizados do Firestore
+    fetchFiles();
+  }, []);
+
+  // Função para buscar arquivos e salvar no localStorage
+  const fetchFiles = async () => {
+    try {
+      setLoading(true);
+      const filesCollection = collection(db, 'marketingFiles');
+      const filesSnapshot = await getDocs(query(filesCollection));
+      
+      const filesData: MarketingFile[] = [];
+      
+      filesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        filesData.push({
+          id: doc.id,
+          name: data.name,
+          category: data.category,
+          fileUrl: data.fileUrl,
+          thumbnailUrl: data.thumbnailUrl,
+          fileType: data.fileType,
+          fileSize: data.fileSize,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          createdBy: data.createdBy,
+          description: data.description,
+          isCarousel: data.isCarousel || false,
+          carouselUrls: data.carouselUrls || [],
+          imageCount: data.imageCount || 0
+        });
+      });
+      
+      // Ordenar arquivos por data (mais recentes primeiro)
+      const sortedFiles = filesData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      
+      // Salvar no localStorage para persistência
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sortedFiles));
+      } catch (e) {
+        console.error('Erro ao salvar no localStorage:', e);
+      }
+      
+      setFiles(sortedFiles);
+      setLoading(false);
+    } catch (error) {
+      console.error('Erro ao buscar arquivos:', error);
+      setError('Erro ao carregar arquivos. Por favor, tente novamente.');
+      setLoading(false);
+    }
+  };
+
+  // Função para agrupar arquivos por data
+  const groupFilesByDate = (files: MarketingFile[]): FileGroup[] => {
+    const groups: { [key: string]: { displayDate: string; files: MarketingFile[] } } = {};
+    
+    files.forEach(file => {
+      const date = new Date(file.createdAt);
+      const dateKey = format(date, 'yyyy-MM-dd');
+      const displayDate = format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+      
+      if (!groups[dateKey]) {
+        groups[dateKey] = {
+          displayDate,
+          files: []
+        };
+      }
+      
+      groups[dateKey].files.push(file);
+    });
+    
+    // Converter para array e ordenar por data (mais recente primeiro)
+    return Object.entries(groups)
+      .map(([key, value]) => ({
+        dateKey: key,
+        displayDate: value.displayDate,
+        files: value.files
+      }))
+      .sort((a, b) => new Date(b.dateKey).getTime() - new Date(a.dateKey).getTime());
+  };
+  
+  // Filtrar arquivos por categoria
+  const filteredFiles = files.filter(file => file.category === activeCategory);
+  
+  // Agrupar arquivos filtrados por data
+  const groupedFiles = groupFilesByDate(filteredFiles);
+
+  // Função para excluir arquivo
+  const handleDeleteFile = async (fileId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este arquivo?')) return;
+    
+    try {
+      // Obter referência do arquivo
+      const fileRef = doc(db, 'marketingFiles', fileId);
+      const fileDoc = await getDoc(fileRef);
+      
+      if (fileDoc.exists()) {
+        const fileData = fileDoc.data();
+        
+        // Excluir arquivo do Storage
+        const storageRef = ref(storage, fileData.storagePath);
+        await deleteObject(storageRef);
+        
+        // Se houver thumbnail, excluir também
+        if (fileData.thumbnailPath) {
+          const thumbnailRef = ref(storage, fileData.thumbnailPath);
+          await deleteObject(thumbnailRef);
+        }
+        
+        // Excluir documento do Firestore
+        await deleteDoc(fileRef);
+        
+        // Atualizar estado
+        setFiles(prevFiles => prevFiles.filter(file => file.id !== fileId));
+      }
+    } catch (error) {
+      console.error('Erro ao excluir arquivo:', error);
+      setError('Erro ao excluir arquivo. Por favor, tente novamente.');
+    }
+  };
+  
+  // Regras de validação para cada categoria
+  const uploadRules = {
+    artes: {
+      maxSize: 10 * 1024 * 1024, // 10MB
+      allowedTypes: ['image/jpeg', 'image/jpg', 'image/png'],
+      errorMessage: 'Imagens devem ser JPG, JPEG ou PNG com no máximo 10MB'
+    },
+    documentos: {
+      maxSize: 10 * 1024 * 1024, // 10MB
+      allowedTypes: ['application/pdf'],
+      errorMessage: 'Documentos devem ser PDF com no máximo 10MB'
+    },
+    apresentacoes: {
+      maxSize: 10 * 1024 * 1024, // 10MB
+      allowedTypes: ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'],
+      errorMessage: 'Apresentações devem ser PDF, JPG, JPEG ou PNG com no máximo 10MB'
+    },
+    videos: {
+      maxSize: 50 * 1024 * 1024, // 50MB
+      allowedTypes: ['video/mp4', 'video/quicktime'],
+      errorMessage: 'Vídeos devem ser MP4 ou MOV com no máximo 50MB'
+    }
+  };
+  
+  // Função para validar o arquivo conforme as regras da categoria
+  const validateFile = (file: File, category: 'artes' | 'documentos' | 'apresentacoes' | 'videos'): string | null => {
+    const rules = uploadRules[category];
+    
+    // Verificar tamanho
+    if (file.size > rules.maxSize) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+      const maxSizeMB = (rules.maxSize / (1024 * 1024)).toFixed(0);
+      return `Arquivo muito grande (${sizeMB}MB). O tamanho máximo permitido é ${maxSizeMB}MB.`;
+    }
+    
+    // Verificar tipo
+    if (!rules.allowedTypes.includes(file.type)) {
+      const allowedExtensions = rules.allowedTypes.map(type => {
+        return type.split('/')[1].toUpperCase();
+      }).join(', ');
+      return `Tipo de arquivo não permitido. Apenas ${allowedExtensions} são aceitos.`;
+    }
+    
+    return null; // Arquivo válido
+  };
+  
+  // Solução de contorno para o upload - com validação de arquivos
+  // Função para simular upload (modo de demonstração)
+  const handleUploadFile = async () => {
+    // Verificar usuário
+    if (!user) {
+      setError('Você precisa estar autenticado para fazer upload de arquivos');
+      return;
+    }
+    
+    // Verificar se temos arquivos para upload
+    if (uploadType === 'single' && !fileToUpload) {
+      setError('Nenhum arquivo selecionado');
+      return;
+    }
+    
+    if (uploadType === 'carousel' && multipleFiles.length === 0) {
+      setError('Nenhuma imagem selecionada para o carrossel');
+      return;
+    }
+    
+    // Limpar erros anteriores
+    setError(null);
+    
+    // Iniciar progresso de upload
+    setUploadProgress(0);
+    
+    try {
+      // Simulação de upload com progresso contínuo
+      for (let progress = 0; progress <= 100; progress += 5) {
+        setUploadProgress(progress);
+        // Esperar um pouco entre cada atualização de progresso
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Criar dados simulados para o arquivo
+      let newFile: MarketingFile;
+      
+      if (uploadType === 'single' && fileToUpload) {
+        // Validar arquivo conforme regras da categoria
+        const validationError = validateFile(fileToUpload, uploadCategory);
+        if (validationError) {
+          setError(validationError);
+          setUploadProgress(0);
+          return;
+        }
+        
+        // Criar URL simulada para o arquivo
+        const timestamp = new Date().getTime();
+        const mockDownloadURL = URL.createObjectURL(fileToUpload);
+        
+        // Criar objeto do arquivo para a interface
+        newFile = {
+          id: `file_${timestamp}`,
+          name: fileToUpload.name,
+          category: uploadCategory,
+          fileUrl: mockDownloadURL,
+          fileType: fileToUpload.type,
+          fileSize: fileToUpload.size,
+          createdAt: new Date(),
+          createdBy: user.email || 'unknown',
+          description: fileDescription
+        };
+      } else if (multipleFiles.length > 0) {
+        // Criar URLs simuladas para as imagens do carrossel
+        const timestamp = new Date().getTime();
+        const carouselUrls = multipleFiles.map(file => URL.createObjectURL(file));
+        
+        // Criar objeto do carrossel para a interface
+        newFile = {
+          id: `carousel_${timestamp}`,
+          name: `Carrossel (${multipleFiles.length} imagens)`,
+          category: 'artes',
+          fileUrl: carouselUrls[0], // URL da primeira imagem como capa
+          fileType: 'carousel/images',
+          fileSize: multipleFiles.reduce((total, file) => total + file.size, 0),
+          createdAt: new Date(),
+          createdBy: user.email || 'unknown',
+          description: fileDescription,
+          isCarousel: true,
+          carouselUrls: carouselUrls,
+          imageCount: multipleFiles.length
+        };
+      } else {
+        throw new Error('Nenhum arquivo selecionado');
+      }
+      
+      // Adicionar o novo arquivo à lista
+      setFiles(prevFiles => [newFile, ...prevFiles]);
+      
+      // Concluir upload e mostrar sucesso
+      setUploadProgress(100);
+      setShowUploadModal(false);
+      setShowSuccessModal(true);
+      
+      // Limpar formulário
+      setFileToUpload(null);
+      setMultipleFiles([]);
+      setFileDescription('');
+      setTextFormatting({ bold: false, italic: false, list: false });
+      
+      console.log('Upload simulado concluído com sucesso!');
+    } catch (error) {
+      console.error('Erro no upload simulado:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido durante o upload';
+      setError(errorMessage);
+      setUploadProgress(0);
+    }
+  };
+  
+  // Função para aplicar formatação ao texto selecionado
+  const applyFormatting = (type: 'bold' | 'italic' | 'list') => {
+    // Obter a referência do textarea
+    const textarea = document.getElementById('description-textarea') as HTMLTextAreaElement;
+    if (!textarea) return;
+    
+    // Obter a seleção atual
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = fileDescription.substring(start, end);
+    
+    // Se não há texto selecionado, atualizar o estado de formatação apenas
+    if (start === end) {
+      setTextFormatting(prev => ({
+        ...prev,
+        [type]: !prev[type]
+      }));
+      return;
+    }
+    
+    // Aplicar formatação ao texto selecionado
+    let newText = fileDescription;
+    let formattedSelection = selectedText;
+    
+    if (type === 'bold') {
+      // Verificar se o texto já está em negrito
+      const isBold = selectedText.startsWith('**') && selectedText.endsWith('**');
+      
+      if (isBold) {
+        // Remover formatação de negrito
+        formattedSelection = selectedText.slice(2, -2);
+      } else {
+        // Adicionar formatação de negrito
+        formattedSelection = `**${selectedText}**`;
+      }
+    } else if (type === 'italic') {
+      // Verificar se o texto já está em itálico
+      const isItalic = selectedText.startsWith('*') && selectedText.endsWith('*') && 
+                      !(selectedText.startsWith('**') && selectedText.endsWith('**'));
+      
+      if (isItalic) {
+        // Remover formatação de itálico
+        formattedSelection = selectedText.slice(1, -1);
+      } else {
+        // Adicionar formatação de itálico
+        formattedSelection = `*${selectedText}*`;
+      }
+    } else if (type === 'list') {
+      // Adicionar formatação de lista para cada linha
+      const lines = selectedText.split('\n');
+      const hasListItems = lines.some(line => line.startsWith('• '));
+      
+      if (hasListItems) {
+        // Remover formatação de lista
+        formattedSelection = lines
+          .map(line => line.replace(/^• /, ''))
+          .join('\n');
+      } else {
+        // Adicionar formatação de lista
+        formattedSelection = lines
+          .map(line => `• ${line}`)
+          .join('\n');
+      }
+    }
+    
+    // Substituir o texto selecionado pelo texto formatado
+    newText = fileDescription.substring(0, start) + formattedSelection + fileDescription.substring(end);
+    setFileDescription(newText);
+    
+    // Restaurar a seleção após a atualização
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start, start + formattedSelection.length);
+    }, 0);
+  };
+  
+  // Função para adicionar emoji à descrição
+  const addEmoji = (emoji: string) => {
+    setFileDescription(prev => prev + emoji);
+  };
+  
+  // Lista de emojis comuns
+  const commonEmojis = [
+    '😀', '👍', '🔥', '⭐', '❤️', '🎉', '✅', '🚀', '💯', '📊',
+    '📈', '📝', '💼', '🏆', '💡', '📱', '💻', '🌟', '👏', '🤝'
+  ];
+  
+  // Função para formatar o tamanho do arquivo
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+  
+  // Função para formatar data
+  const formatDate = (date: Date): string => {
+    return format(date, 'dd/MM/yyyy', { locale: ptBR });
+  };
+  
+  // Função para verificar se um arquivo é novo (adicionado nas últimas 24 horas)
+  const isNewFile = (date: Date): boolean => {
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffHours = diffTime / (1000 * 60 * 60);
+    return diffHours < 24;
+  };
+  
+  // Função para formatar data relativa (há quanto tempo)
+  const formatRelativeTime = (date: Date): string => {
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'agora mesmo';
+    if (diffInMinutes < 60) return `há ${diffInMinutes} minutos`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `há ${diffInHours} horas`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays === 1) return 'há 1 dia';
+    if (diffInDays < 30) return `há ${diffInDays} dias`;
+    
+    return format(date, "dd 'de' MMMM", { locale: ptBR });
+  };
+
+  // Função para baixar todas as imagens de um carrossel como ZIP
+  const downloadCarouselAsZip = async (file: MarketingFile) => {
+    if (!file.isCarousel || !file.carouselUrls || file.carouselUrls.length === 0) {
+      console.error('Não é um carrossel válido');
+      return;
+    }
+    
+    try {
+      // Criar um novo arquivo ZIP
+      const zip = new JSZip();
+      const zipFilename = `${file.name.replace(/\.[^/.]+$/, '')}_carrossel.zip`;
+      
+      // Adicionar todas as imagens ao ZIP
+      const fetchPromises = file.carouselUrls.map(async (url, index) => {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Erro ao baixar imagem ${index + 1}`);
+          
+          const blob = await response.blob();
+          const extension = url.split('.').pop() || 'jpg';
+          const filename = `imagem_${index + 1}.${extension}`;
+          
+          zip.file(filename, blob);
+          return true;
+        } catch (error) {
+          console.error(`Erro ao processar imagem ${index + 1}:`, error);
+          return false;
+        }
+      });
+      
+      // Aguardar todas as imagens serem processadas
+      await Promise.all(fetchPromises);
+      
+      // Gerar o arquivo ZIP
+      const content = await zip.generateAsync({ type: 'blob' });
+      
+      // Criar um link para download
+      const downloadUrl = URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = zipFilename;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Limpar
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+      }, 100);
+    } catch (error) {
+      console.error('Erro ao criar arquivo ZIP:', error);
+      alert('Erro ao criar arquivo ZIP. Por favor, tente novamente.');
+    }
+  };
+
+  // Função para obter os tipos de arquivo aceitos com base na categoria selecionada
+  const getAcceptedFileTypes = (): string => {
+    switch (uploadCategory) {
+      case 'artes':
+        return '.jpg,.jpeg,.png';
+      case 'documentos':
+        return '.pdf';
+      case 'apresentacoes':
+        return '.pdf,.jpg,.jpeg,.png';
+      case 'videos':
+        return '.mp4,.mov';
+      default:
+        return '*';
+    }
+  };
+  
+  // Função para obter a mensagem de tipos de arquivo aceitos
+  const getFileTypeMessage = (): string => {
+    switch (uploadCategory) {
+      case 'artes':
+        return 'Imagens: JPG, JPEG, PNG (máx. 10MB)';
+      case 'documentos':
+        return 'Documentos: PDF (máx. 10MB)';
+      case 'apresentacoes':
+        return 'Apresentações: PDF, JPG, JPEG, PNG (máx. 10MB)';
+      case 'videos':
+        return 'Vídeos: MP4, MOV (máx. 50MB)';
+      default:
+        return 'Selecione uma categoria primeiro';
+    }
+  };
+  
+  // Renderizar categorias
+  const renderCategories = () => {
+    const categories = [
+      { id: 'artes', label: 'Artes Gráficas', icon: Image, activeColor: 'bg-blue-600 border-blue-400', iconColor: 'text-blue-400' },
+      { id: 'documentos', label: 'Documentos PDF', icon: FileText, activeColor: 'bg-red-600 border-red-400', iconColor: 'text-red-400' },
+      { id: 'apresentacoes', label: 'Apresentações', icon: PresentationIcon, activeColor: 'bg-yellow-600 border-yellow-400', iconColor: 'text-yellow-400' },
+      { id: 'videos', label: 'Vídeos', icon: Film, activeColor: 'bg-green-600 border-green-400', iconColor: 'text-green-400' }
+    ];
+
+    return (
+      <div className="flex space-x-3 mb-6 overflow-x-auto pb-2">
+        {categories.map(category => (
+          <button
+            key={category.id}
+            onClick={() => {
+              setActiveCategory(category.id as any);
+              // Limpar arquivo selecionado ao mudar de categoria
+              if (fileToUpload) {
+                setFileToUpload(null);
+                setError(null);
+              }
+            }}
+            className={`flex items-center px-4 py-2 rounded-md transition-all border-2 bg-black ${
+              activeCategory === category.id
+                ? `${category.activeColor} text-white shadow-lg transform scale-105`
+                : 'border-gray-700 text-gray-300 hover:border-gray-500'
+            }`}
+          >
+            <category.icon className="h-4 w-4 mr-2" />
+            <span>{category.label}</span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  // Adicionar mensagem de debug para verificar o estado
+  useEffect(() => {
+    console.log('Estado atual da página Marketing:', {
+      loading,
+      error,
+      filesCount: files.length,
+      activeCategory,
+      filteredFilesCount: filteredFiles.length,
+      isAdmin
+    });
+  }, [loading, error, files, activeCategory, filteredFiles, isAdmin]);
+
+  return (
+    <div className="container mx-auto px-4 py-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-white">Materiais de Marketing</h1>
+        
+        {canUpload && (
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            <span>Upload</span>
+          </button>
+        )}
+        
+        {(isPartner || isManager) && (
+          <div className="text-sm text-gray-400 italic">
+            Modo visualização apenas
+          </div>
+        )}
+      </div>
+
+      {/* Navegação por categorias */}
+      {renderCategories()}
+
+      {/* Área de conteúdo principal */}
+      <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : error ? (
+          <div className="text-center text-red-500 py-10">{error}</div>
+        ) : filteredFiles.length === 0 ? (
+          <div className="text-center text-gray-500 py-10">
+            <p className="text-lg">Nenhum arquivo encontrado nesta categoria.</p>
+            {canUpload && (
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                <span>Adicionar arquivo</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {/* Arquivos agrupados por data */}
+            {groupedFiles.map(group => (
+              <div key={group.dateKey} className="mb-8">
+                <h3 className="text-lg font-medium text-white mb-4 border-b border-gray-700 pb-2">
+                  {group.displayDate}
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* Aqui vão os cards dos arquivos */}
+                  {group.files.map(file => (
+                    <div key={file.id} className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-gray-500 transition-all relative group">
+                {/* Indicador de arquivo novo */}
+                {isNewFile(file.createdAt) && (
+                  <div className="absolute top-3 right-3 z-10">
+                    <div className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center">
+                      <span className="animate-pulse mr-1 h-2 w-2 bg-white rounded-full inline-block"></span>
+                      NOVO
+                    </div>
+                  </div>
+                )}
+                
+                <div className="h-40 bg-gray-700 flex items-center justify-center overflow-hidden relative">
+                  {file.isCarousel ? (
+                    <>
+                      <img
+                        src={file.fileUrl}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Fallback para ícone se a imagem não carregar
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className="hidden flex-col items-center justify-center absolute inset-0 bg-gray-700">
+                        <Image className="h-16 w-16 text-gray-400" />
+                      </div>
+                      {/* Indicador de carrossel */}
+                      <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-md flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                        </svg>
+                        <span>{file.imageCount} imagens</span>
+                      </div>
+                    </>
+                  ) : file.fileType.startsWith('image/') ? (
+                    <>
+                      <img
+                        src={file.fileUrl}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Fallback para ícone se a imagem não carregar
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className="hidden flex-col items-center justify-center absolute inset-0 bg-gray-700">
+                        <Image className="h-16 w-16 text-gray-400" />
+                      </div>
+                    </>
+                  ) : file.fileType === 'application/pdf' ? (
+                    <div className="flex flex-col items-center justify-center">
+                      <FileText className="h-16 w-16 text-red-400" />
+                      <span className="text-xs text-gray-400 mt-2">Documento PDF</span>
+                    </div>
+                  ) : file.fileType.startsWith('video/') ? (
+                    <div className="flex flex-col items-center justify-center">
+                      <Film className="h-16 w-16 text-blue-400" />
+                      <span className="text-xs text-gray-400 mt-2">Vídeo</span>
+                    </div>
+                  ) : file.category === 'apresentacoes' ? (
+                    <div className="flex flex-col items-center justify-center">
+                      <PresentationIcon className="h-16 w-16 text-yellow-400" />
+                      <span className="text-xs text-gray-400 mt-2">Apresentação</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center">
+                      {file.category === 'artes' && <Image className="h-16 w-16 text-gray-400" />}
+                      {file.category === 'documentos' && <FileText className="h-16 w-16 text-gray-400" />}
+                      {file.category === 'apresentacoes' && <PresentationIcon className="h-16 w-16 text-gray-400" />}
+                      {file.category === 'videos' && <Film className="h-16 w-16 text-gray-400" />}
+                    </div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="text-white font-medium truncate mr-2">{file.name}</h3>
+                    <span className="text-xs text-gray-500 whitespace-nowrap" title={formatDate(file.createdAt)}>
+                      {formatRelativeTime(file.createdAt)}
+                    </span>
+                  </div>
+                  <p className="text-gray-400 text-sm truncate">{file.description || 'Sem descrição'}</p>
+                  
+                  {/* Indicador de arquivo novo sem barra de progresso */}
+                  {isNewFile(file.createdAt) && (
+                    <div className="mt-2">
+                      <span className="text-xs text-blue-400 font-medium">Adicionado recentemente</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex justify-between mt-4">
+                    <button
+                      onClick={() => {
+                        setSelectedFile(file);
+                        setShowPreviewModal(true);
+                      }}
+                      className="text-blue-400 hover:text-blue-300"
+                      title="Visualizar"
+                    >
+                      <Eye className="h-5 w-5" />
+                    </button>
+                    
+                    <a
+                      href={file.fileUrl}
+                      download={file.name}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-green-400 hover:text-green-300"
+                      title="Download"
+                    >
+                      <Download className="h-5 w-5" />
+                    </a>
+                    
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteFile(file.id)}
+                        className="text-red-400 hover:text-red-300"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                      Categoria
+                    </label>
+                    <select
+                      value={uploadCategory}
+                      onChange={(e) => {
+                        const category = e.target.value as 'artes' | 'documentos' | 'apresentacoes' | 'videos';
+                        setUploadCategory(category);
+                        // Limpar arquivos selecionados ao mudar de categoria
+                        setFileToUpload(null);
+                        setMultipleFiles([]);
+                        // Resetar para imagem única se mudar de categoria
+                        if (category !== 'artes') {
+                          setUploadType('single');
+                        }
+                      }}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="artes">Artes Gráficas</option>
+                      <option value="documentos">Documentos PDF</option>
+                      <option value="apresentacoes">Apresentações</option>
+                      <option value="videos">Vídeos</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modal de Upload */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-50">
+          <div className="bg-black rounded-lg border border-gray-800 p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold text-white">Upload de Material</h3>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Categoria
+              </label>
+              <select
+                value={uploadCategory}
+                onChange={(e) => {
+                  const category = e.target.value as 'artes' | 'documentos' | 'apresentacoes' | 'videos';
+                  setUploadCategory(category);
+                  // Limpar arquivos selecionados ao mudar de categoria
+                  setFileToUpload(null);
+                  setMultipleFiles([]);
+                  // Resetar para imagem única se mudar de categoria
+                  if (category !== 'artes') {
+                    setUploadType('single');
+                  }
+                }}
+                className="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="artes">Artes Gráficas</option>
+                <option value="documentos">Documentos PDF</option>
+                <option value="apresentacoes">Apresentações</option>
+                <option value="videos">Vídeos</option>
+              </select>
+            </div>
+            
+            {/* Seletor de tipo de upload (apenas para Artes Gráficas) */}
+            {uploadCategory === 'artes' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Tipo de Upload
+                </label>
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="uploadType"
+                      value="single"
+                      checked={uploadType === 'single'}
+                      onChange={() => {
+                        setUploadType('single');
+                        setMultipleFiles([]);
+                      }}
+                      className="mr-2 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-white">Imagem Única</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="uploadType"
+                      value="carousel"
+                      checked={uploadType === 'carousel'}
+                      onChange={() => {
+                        setUploadType('carousel');
+                        setFileToUpload(null);
+                      }}
+                      className="mr-2 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-white">Carrossel (até 10 imagens)</span>
+                  </label>
+                </div>
+              </div>
+            )}
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                {uploadType === 'carousel' ? 'Imagens (selecione até 10)' : 'Arquivo'}
+              </label>
+              <div className="flex items-center justify-center w-full">
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-gray-900 border-gray-700 hover:border-blue-500 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <Upload className="w-8 h-8 mb-3 text-blue-400" />
+                    <p className="mb-2 text-sm text-gray-300">
+                      <span className="font-semibold">Clique para selecionar</span> ou arraste e solte
+                    </p>
+                    {uploadType === 'single' ? (
+                      <p className="text-xs text-gray-500">
+                        {fileToUpload ? fileToUpload.name : getFileTypeMessage()}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        {multipleFiles.length > 0 
+                          ? `${multipleFiles.length} ${multipleFiles.length === 1 ? 'imagem selecionada' : 'imagens selecionadas'}` 
+                          : 'Selecione até 10 imagens JPG, JPEG ou PNG'}
+                      </p>
+                    )}
+                  </div>
+                  {uploadType === 'single' ? (
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept={getAcceptedFileTypes()}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setFileToUpload(e.target.files[0]);
+                          setError(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <input 
+                      type="file" 
+                      multiple
+                      className="hidden" 
+                      accept="image/jpeg,image/jpg,image/png"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          const files = Array.from(e.target.files);
+                          // Limitar a 10 imagens
+                          const selectedFiles = files.slice(0, 10);
+                          
+                          // Validar cada arquivo
+                          let hasError = false;
+                          selectedFiles.forEach(file => {
+                            const validationError = validateFile(file, 'artes');
+                            if (validationError) {
+                              setError(`Erro em ${file.name}: ${validationError}`);
+                              hasError = true;
+                            }
+                          });
+                          
+                          if (!hasError) {
+                            setMultipleFiles(selectedFiles);
+                            setError(null);
+                          }
+                        }
+                      }}
+                    />
+                  )}
+                </label>
+              </div>
+              
+              {/* Visualização das imagens selecionadas para carrossel */}
+              {uploadType === 'carousel' && multipleFiles.length > 0 && (
+                <div className="mt-4">
+                  <div className="grid grid-cols-5 gap-2">
+                    {multipleFiles.map((file, index) => (
+                      <div key={index} className="relative group">
+                        <img 
+                          src={URL.createObjectURL(file)} 
+                          alt={`Imagem ${index + 1}`}
+                          className="w-full h-16 object-cover rounded-md"
+                        />
+                        <button
+                          onClick={() => {
+                            const newFiles = [...multipleFiles];
+                            newFiles.splice(index, 1);
+                            setMultipleFiles(newFiles);
+                          }}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remover"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Descrição
+              </label>
+              <div className="flex flex-wrap gap-2 mb-2 bg-gray-900 p-2 rounded-t-md border-t border-x border-gray-700">
+                <button 
+                  onClick={() => applyFormatting('bold')}
+                  className={`p-1.5 rounded ${textFormatting.bold ? 'bg-blue-700' : 'bg-gray-800 hover:bg-gray-700'}`}
+                  title="Negrito"
+                >
+                  <Bold className="h-4 w-4 text-white" />
+                </button>
+                <button 
+                  onClick={() => applyFormatting('italic')}
+                  className={`p-1.5 rounded ${textFormatting.italic ? 'bg-blue-700' : 'bg-gray-800 hover:bg-gray-700'}`}
+                  title="Itálico"
+                >
+                  <Italic className="h-4 w-4 text-white" />
+                </button>
+                <button 
+                  onClick={() => applyFormatting('list')}
+                  className={`p-1.5 rounded ${textFormatting.list ? 'bg-blue-700' : 'bg-gray-800 hover:bg-gray-700'}`}
+                  title="Lista"
+                >
+                  <List className="h-4 w-4 text-white" />
+                </button>
+                <div className="flex items-center gap-1 ml-auto">
+                  <button 
+                    className="p-1.5 rounded bg-gray-800 hover:bg-gray-700 flex items-center"
+                    title="Emojis"
+                  >
+                    <Smile className="h-4 w-4 text-white" />
+                  </button>
+                  <div className="flex flex-wrap gap-1 max-w-[150px]">
+                    {commonEmojis.slice(0, 8).map((emoji, index) => (
+                      <button 
+                        key={index}
+                        onClick={() => addEmoji(emoji)}
+                        className="w-7 h-7 flex items-center justify-center hover:bg-gray-700 rounded"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <textarea
+                id="description-textarea"
+                value={fileDescription}
+                onChange={(e) => setFileDescription(e.target.value)}
+                className="w-full bg-gray-900 border-b border-x border-gray-700 rounded-b-md px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                rows={4}
+                placeholder="Descreva o material... Selecione texto para formatar"
+              />
+              <p className="text-xs text-gray-500 mt-1">Use **texto** para negrito, *texto* para itálico</p>
+            </div>
+            
+            {/* Barra de progresso */}
+            {uploadProgress > 0 && (
+              <div className="mb-6">
+                <div className="flex justify-between text-xs text-gray-400 mb-1">
+                  <span>Progresso do upload</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="relative w-full">
+                  <div className="w-full bg-gray-800 rounded-full h-6 overflow-hidden border border-gray-700 shadow-inner">
+                    <div 
+                      className="bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 h-full rounded-full transition-all duration-300 flex items-center justify-center text-xs text-white font-bold shadow-lg relative overflow-hidden" 
+                      style={{ width: `${uploadProgress}%` }}
+                    >
+                      {/* Efeito de brilho animado */}
+                      <div className="absolute inset-0 overflow-hidden">
+                        <div className="animate-[shimmer_2s_infinite] absolute -inset-[10px] opacity-20 bg-gradient-to-r from-transparent via-white to-transparent transform -translate-x-full"></div>
+                      </div>
+                      {uploadProgress >= 10 && (
+                        <div className="flex items-center z-10">
+                          {uploadProgress === 100 ? (
+                            <>
+                              <CheckSquare className="h-3 w-3 mr-1" />
+                              <span>Concluído!</span>
+                            </>
+                          ) : (
+                            <span>{uploadProgress}%</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Mensagem de erro */}
+            {error && (
+              <div className="mb-6 p-3 bg-red-900/50 border border-red-700 rounded-md">
+                <p className="text-red-300 text-sm">{error}</p>
+              </div>
+            )}
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="px-4 py-2 border border-gray-700 text-white rounded-md hover:bg-gray-900 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUploadFile}
+                disabled={(uploadType === 'single' && !fileToUpload) || (uploadType === 'carousel' && multipleFiles.length === 0)}
+                className={`px-4 py-2 rounded-md ${(uploadType === 'single' && !fileToUpload) || (uploadType === 'carousel' && multipleFiles.length === 0) ? 'bg-blue-700/50 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500'} text-white transition-colors`}
+              >
+                <span className="flex items-center">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Sucesso */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-black rounded-lg border-2 border-green-500 p-8 w-full max-w-md shadow-2xl animate-[bounceIn_0.5s_ease-out]" 
+               style={{
+                 boxShadow: '0 0 20px rgba(34, 197, 94, 0.3), 0 0 40px rgba(34, 197, 94, 0.1)'
+               }}>
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-900 mb-6 animate-[pulse_2s_infinite] relative">
+                {/* Círculo de brilho */}
+                <div className="absolute inset-0 rounded-full bg-green-500 opacity-30 animate-[ping_1.5s_ease-out_infinite]"></div>
+                <CheckSquare className="h-10 w-10 text-green-400 z-10" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-3 animate-[slideInDown_0.5s_ease-out]">Upload Concluído com Sucesso!</h3>
+              <p className="text-gray-300 mb-8 animate-[fadeIn_0.8s_ease-out]">Seu arquivo foi enviado e já está disponível para visualização.</p>
+              
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-md hover:from-green-500 hover:to-green-400 transition-all duration-300 w-full font-medium shadow-lg animate-[fadeIn_1s_ease-out] hover:shadow-green-500/30"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Visualização */}
+      {showPreviewModal && selectedFile && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 rounded-lg border border-gray-700 p-6 w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold text-white truncate">{selectedFile.name}</h3>
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setSelectedFile(null);
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              {/* Visualização baseada no tipo de arquivo */}
+              {selectedFile.isCarousel ? (
+                <div className="flex flex-col items-center justify-center">
+                  {/* Carrossel de imagens */}
+                  <div className="relative w-full max-w-3xl">
+                    {/* Imagem principal */}
+                    <div className="flex justify-center mb-4">
+                      <img 
+                        src={selectedFile.carouselUrls?.[0] || selectedFile.fileUrl} 
+                        alt={`${selectedFile.name} - Imagem principal`} 
+                        className="max-w-full max-h-[50vh] object-contain rounded-lg shadow-lg" 
+                      />
+                    </div>
+                    
+                    {/* Miniaturas do carrossel */}
+                    <div className="flex justify-center space-x-2 mt-4 overflow-x-auto pb-2">
+                      {selectedFile.carouselUrls?.map((url, index) => (
+                        <button 
+                          key={index}
+                          onClick={() => {
+                            // Trocar a imagem principal ao clicar na miniatura
+                            const newFile = {...selectedFile};
+                            if (newFile.carouselUrls) {
+                              // Mover a imagem clicada para a primeira posição
+                              const clickedUrl = newFile.carouselUrls[index];
+                              newFile.carouselUrls = [
+                                clickedUrl,
+                                ...newFile.carouselUrls.filter((_, i) => i !== index)
+                              ];
+                              setSelectedFile(newFile);
+                            }
+                          }}
+                          className="flex-shrink-0 border-2 rounded-md overflow-hidden transition-all hover:scale-105"
+                          style={{
+                            borderColor: url === selectedFile.carouselUrls[0] ? '#3b82f6' : 'transparent',
+                          }}
+                        >
+                          <img 
+                            src={url} 
+                            alt={`Miniatura ${index + 1}`} 
+                            className="w-16 h-16 object-cover" 
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <div className="text-center mt-2 text-gray-400 text-sm">
+                      <span>Carrossel com {selectedFile.imageCount} imagens</span>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedFile.fileType.startsWith('image/') && (
+                <div className="flex justify-center">
+                  <img 
+                    src={selectedFile.fileUrl} 
+                    alt={selectedFile.name} 
+                    className="max-w-full max-h-[60vh] object-contain" 
+                    onError={(e) => {
+                      // Fallback para ícone se a imagem não carregar
+                      (e.target as HTMLImageElement).style.display = 'none';
+                      (e.target as HTMLImageElement).parentElement!.innerHTML = `
+                        <div class="text-center p-6 bg-gray-800 rounded-lg">
+                          <p class="text-red-400 mb-2">Não foi possível carregar a imagem</p>
+                          <p class="text-gray-400 text-sm">O arquivo pode estar indisponível ou corrompido.</p>
+                        </div>
+                      `;
+                    }}
+                  />
+                </div>
+              )}
+              
+              {selectedFile.fileType === 'application/pdf' && (
+                <div className="flex justify-center h-[60vh]">
+                  {selectedFile.fileUrl.startsWith('http') ? (
+                    <iframe 
+                      src={selectedFile.fileUrl} 
+                      title={selectedFile.name} 
+                      className="w-full h-full border-0" 
+                      onError={() => {
+                        // No fallback para iframe, pois o erro não é facilmente capturado
+                      }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center w-full h-full bg-gray-800 rounded-lg">
+                      <FileText className="h-24 w-24 text-red-400 mb-4" />
+                      <p className="text-white text-lg font-medium">Visualização de PDF não disponível</p>
+                      <p className="text-gray-400 mt-2">Clique no botão de download abaixo para visualizar o arquivo.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {selectedFile.category === 'apresentacoes' && !selectedFile.fileType.startsWith('image/') && selectedFile.fileType !== 'application/pdf' && (
+                <div className="flex justify-center h-[60vh]">
+                  <div className="flex flex-col items-center justify-center w-full h-full bg-gray-800 rounded-lg">
+                    <PresentationIcon className="h-24 w-24 text-yellow-400 mb-4" />
+                    <p className="text-white text-lg font-medium">Visualização não disponível</p>
+                    <p className="text-gray-400 mt-2">Clique no botão de download abaixo para visualizar a apresentação.</p>
+                  </div>
+                </div>
+              )}
+              
+              {selectedFile.fileType.startsWith('video/') && (
+                <div className="flex justify-center">
+                  <video 
+                    src={selectedFile.fileUrl} 
+                    controls 
+                    className="max-w-full max-h-[60vh]" 
+                    onError={(e) => {
+                      // Fallback para mensagem de erro
+                      const target = e.target as HTMLVideoElement;
+                      target.style.display = 'none';
+                      target.parentElement!.innerHTML = `
+                        <div class="text-center p-6 bg-gray-800 rounded-lg">
+                          <p class="text-red-400 mb-2">Não foi possível reproduzir o vídeo</p>
+                          <p class="text-gray-400 text-sm">O arquivo pode estar indisponível ou em formato não suportado pelo navegador.</p>
+                        </div>
+                      `;
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-gray-800 rounded-lg p-4">
+              <h4 className="text-lg font-medium text-white mb-2">Informações do Arquivo</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-gray-400 text-sm">Nome:</p>
+                  <p className="text-white">{selectedFile.name}</p>
+                </div>
+                
+                <div>
+                  <p className="text-gray-400 text-sm">Categoria:</p>
+                  <p className="text-white">
+                    {selectedFile.category === 'artes' && 'Artes Gráficas'}
+                    {selectedFile.category === 'documentos' && 'Documentos PDF'}
+                    {selectedFile.category === 'apresentacoes' && 'Apresentações'}
+                    {selectedFile.category === 'videos' && 'Vídeos'}
+                  </p>
+                </div>
+                
+                <div>
+                  <p className="text-gray-400 text-sm">Tamanho:</p>
+                  <p className="text-white">{formatFileSize(selectedFile.fileSize)}</p>
+                </div>
+                
+                <div>
+                  <p className="text-gray-400 text-sm">Data de Upload:</p>
+                  <p className="text-white">{formatDate(selectedFile.createdAt)}</p>
+                </div>
+                
+                <div className="md:col-span-2">
+                  <p className="text-gray-400 text-sm">Descrição:</p>
+                  <p className="text-white">{selectedFile.description || 'Sem descrição'}</p>
+                </div>
+              </div>
+              
+              <div className="flex justify-end mt-4 space-x-3">
+                {selectedFile.isCarousel && selectedFile.carouselUrls && selectedFile.carouselUrls.length > 0 && (
+                  <button
+                    onClick={() => downloadCarouselAsZip(selectedFile)}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    <Archive className="h-4 w-4 mr-2" />
+                    <span>Download ZIP</span>
+                  </button>
+                )}
+                <a
+                  href={selectedFile.fileUrl}
+                  download={selectedFile.name}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  <span>Download</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, doc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Building2, Plus, Edit, Trash2, Loader2 } from 'lucide-react';
+import { Building2, Plus, Edit, Trash2 } from 'lucide-react';
 import BankSettings from './settings/BankSettings';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -32,7 +32,7 @@ export default function Settings() {
     try {
       setLoading(true);
       setError(null);
-      console.log('Tentando carregar bancos. Usuário:', user?.email, 'Perfil:', user?.role);
+      console.log('Tentando carregar bancos. Usuário:', user?.email, 'Perfil:', user?.roleKey);
       
       const banksQuery = query(collection(db, 'banks'), orderBy('companyName'));
       const snapshot = await getDocs(banksQuery);
@@ -102,7 +102,9 @@ export default function Settings() {
       );
     }
 
-    if (user.role !== 'admin' && user.role !== 'manager') {
+    // Verificar permissões usando roleKey em vez de role
+    if (user.roleKey !== 'admin' && user.roleKey !== 'manager') {
+      console.log('Acesso negado. Perfil do usuário:', user.roleKey);
       return (
         <div className="p-6">
           <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">

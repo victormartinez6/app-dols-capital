@@ -23,6 +23,8 @@ const schema = z.object({
   clientId: z.string(),
   bankId: z.string().optional(),
   bankCommission: z.string().optional(),
+  teamCode: z.string().optional(),
+  teamName: z.string().optional(),
 });
 
 const proposalStatusOptions = [
@@ -86,6 +88,8 @@ export default function ProposalEdit() {
       clientId: '',
       bankId: '',
       bankCommission: '',
+      teamCode: '',
+      teamName: '',
     }
   });
 
@@ -269,6 +273,10 @@ export default function ProposalEdit() {
           }, 500);
         }
         
+        // Definir o código e nome da equipe
+        setValue('teamCode', data.teamCode || '');
+        setValue('teamName', data.teamName || '');
+        
         // Forçar a revalidação dos campos após um pequeno atraso
         // para garantir que os componentes tenham tempo de renderizar
         setTimeout(() => {
@@ -360,6 +368,8 @@ export default function ProposalEdit() {
         clientId: data.clientId || '',
         bankId: data.bankId || '',
         bankCommission: data.bankCommission || '',
+        teamCode: data.teamCode || '',
+        teamName: data.teamName || '',
         updatedAt: new Date(),
         observationsTimeline: updatedObservationsTimeline,  // Adicionar a timeline atualizada
       };
@@ -612,6 +622,32 @@ export default function ProposalEdit() {
                   control={control}
                 />
               )}
+            </div>
+          </div>
+
+          <div className="bg-gray-900/50 rounded-lg p-5">
+            <h4 className="text-md font-medium text-white mb-4">Equipe</h4>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Código da Equipe
+                </label>
+                <div className="flex items-center">
+                  {watch('teamCode') ? (
+                    <span 
+                      className="px-2 py-1 text-xs font-medium rounded-md bg-blue-900 text-blue-200 cursor-help inline-block"
+                      title={`Equipe: ${watch('teamName')}`}
+                    >
+                      {watch('teamCode')}
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">Sem equipe</span>
+                  )}
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  A equipe é definida no cadastro do cliente. Para alterar, edite o cadastro do cliente.
+                </p>
+              </div>
             </div>
           </div>
 

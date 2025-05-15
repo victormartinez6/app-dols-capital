@@ -67,7 +67,7 @@ export default function Webhooks() {
   const [showForm, setShowForm] = useState(false);
 
   // Verifica se o usuário é admin
-  if (user?.role !== 'admin') {
+  if (user?.roleKey !== 'admin') {
     return (
       <div className="p-6 bg-black rounded-lg shadow">
         <h2 className="text-xl font-semibold text-red-600 dark:text-red-400">

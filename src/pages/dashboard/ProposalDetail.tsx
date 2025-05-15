@@ -24,6 +24,8 @@ interface Proposal {
   companyDescription?: string;
   hasRestriction?: boolean;
   observations?: string;
+  teamCode?: string;
+  teamName?: string;
   observationsTimeline?: {
     id: string;
     text: string;
@@ -148,6 +150,8 @@ export default function ProposalDetail() {
             companyDescription: data.companyDescription || '',
             hasRestriction: data.hasRestriction || false,
             observations: data.observations || '',
+            teamCode: data.teamCode || '',
+            teamName: data.teamName || '',
             observationsTimeline: safeObservationsTimeline,
             pendencies: data.pendencies || [],
           };
@@ -360,7 +364,7 @@ export default function ProposalDetail() {
       </div>
 
       {/* Detalhes Adicionais */}
-      {proposal && (proposal.creditLine || proposal.creditReason || proposal.companyDescription) && (
+      {proposal && (proposal.creditLine || proposal.creditReason || proposal.companyDescription || proposal.teamCode || proposal.teamName) && (
         <div className="bg-black border border-gray-800 rounded-lg p-4 md:p-6 space-y-4 md:space-y-6">
           <h3 className="text-lg md:text-xl font-semibold text-white">Detalhes Adicionais</h3>
           
@@ -383,6 +387,20 @@ export default function ProposalDetail() {
               <div>
                 <h4 className="text-sm font-medium text-gray-400">Descrição da Empresa</h4>
                 <p className="text-white whitespace-pre-wrap">{proposal.companyDescription}</p>
+              </div>
+            )}
+            
+            {proposal.teamCode && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Código da Equipe</h4>
+                <p className="text-white">{proposal.teamCode}</p>
+              </div>
+            )}
+            
+            {proposal.teamName && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Nome da Equipe</h4>
+                <p className="text-white">{proposal.teamName}</p>
               </div>
             )}
             

@@ -70,6 +70,9 @@ export default function ProposalNew() {
     id: string;
     name: string;
     type: 'PF' | 'PJ';
+    teamCode: string;
+    teamName: string;
+    inviterUserId?: string; // ID do parceiro que convidou o cliente
   } | null>(null);
 
   const { register, handleSubmit, formState: { errors }, reset, watch, setValue, control } = useForm({
@@ -159,12 +162,46 @@ export default function ProposalNew() {
           clientName = data.companyName || data.name || 'Cliente PJ';
         }
         
-        console.log(`Cliente processado: ${clientName} (${clientType}) - ID: ${docSnap.id}`);
+        // Buscar informações da equipe do cliente
+        let teamCode = '';
+        let teamName = 'Sem equipe';
+        
+        // Verificar se o cliente tem equipe diretamente nos dados
+        if (data.teamCode && data.teamName) {
+          teamCode = data.teamCode;
+          teamName = data.teamName;
+          console.log(`Equipe encontrada nos dados do cliente: ${teamName} (${teamCode})`);
+        } 
+        // Verificar se o cliente tem referência para uma equipe
+        else if (data.team) {
+          try {
+            const teamRef = doc(db, 'teams', data.team);
+            const teamSnap = await getDoc(teamRef);
+            
+            if (teamSnap.exists()) {
+              const teamData = teamSnap.data();
+              teamCode = teamData.teamCode || '';
+              teamName = teamData.name || 'Equipe sem nome';
+              console.log(`Equipe encontrada por referência: ${teamName} (${teamCode})`);
+            }
+          } catch (err) {
+            console.error('Erro ao buscar dados da equipe:', err);
+          }
+        }
+        
+        console.log(`Cliente processado: ${clientName} (${clientType}) - ID: ${docSnap.id} - Equipe: ${teamName} (${teamCode})`);
+        
+        // Capturar o inviterUserId do cliente, se existir
+        const inviterUserId = data.inviterUserId || null;
+        console.log(`InviterUserId encontrado: ${inviterUserId || 'Não encontrado'}`);
         
         setClient({
           id: docSnap.id,
           name: clientName,
           type: clientType,
+          teamCode,
+          teamName,
+          inviterUserId
         });
       } else {
         console.error("Cliente não encontrado no Firestore");
@@ -201,7 +238,9 @@ export default function ProposalNew() {
       console.log('Dados a serem salvos:', {
         ...data,
         desiredCredit,
-        propertyValue
+        propertyValue,
+        teamCode: client.teamCode,
+        teamName: client.teamName
       });
       
       // Criar a proposta no Firestore
@@ -210,6 +249,11 @@ export default function ProposalNew() {
         clientId,
         clientName: client.name,
         clientType: client.type,
+        // Incluir informações da equipe do cliente
+        teamCode: client.teamCode,
+        teamName: client.teamName,
+        // Incluir informações do parceiro que convidou o cliente
+        inviterUserId: client.inviterUserId || user?.id, // Usar o ID do parceiro que convidou ou o usuário atual
         desiredCredit: desiredCredit,
         hasProperty: data.hasProperty,
         propertyValue: propertyValue,
@@ -305,13 +349,16 @@ export default function ProposalNew() {
         </div>
       )}
 
-      <div className="mb-6 bg-blue-900/20 border border-blue-800 rounded-md p-4">
-        <h3 className="text-md font-medium text-white mb-2">Informações do Cliente</h3>
+      <div className="bg-gray-900 p-4 rounded-lg shadow-md mb-6">
+        <h2 className="text-xl font-semibold text-white mb-2">Dados do Cliente</h2>
         <p className="text-blue-300">
-          <strong>Cliente:</strong> {client?.name}
+          <strong>Nome:</strong> {client?.name}
         </p>
         <p className="text-blue-300">
           <strong>Tipo:</strong> {client?.type === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'}
+        </p>
+        <p className="text-blue-300">
+          <strong>Equipe:</strong> {client?.teamCode ? `${client?.teamName} (${client?.teamCode})` : 'Sem equipe'}
         </p>
       </div>
 

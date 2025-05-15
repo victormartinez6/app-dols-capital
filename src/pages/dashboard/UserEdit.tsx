@@ -9,7 +9,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'client' | 'manager' | 'admin';
+  roleKey: 'client' | 'manager' | 'admin';
   createdAt: any;
   createdBy: string;
   hasRegistration?: boolean;
@@ -29,7 +29,7 @@ export default function UserEdit() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: ''
+    roleKey: ''
   });
 
   useEffect(() => {
@@ -65,7 +65,7 @@ export default function UserEdit() {
         setFormData({
           name: userData.name || '',
           email: userData.email || '',
-          role: userData.role || 'client'
+          roleKey: userData.roleKey || 'client'
         });
       } catch (err) {
         console.error('Erro ao buscar usuário:', err);
@@ -92,7 +92,7 @@ export default function UserEdit() {
     if (!id || !user) return;
 
     // Verificar se o usuário atual é um administrador
-    if (user.role !== 'admin') {
+    if (user.roleKey !== 'admin') {
       setError('Você não tem permissão para editar usuários');
       return;
     }
@@ -105,7 +105,7 @@ export default function UserEdit() {
       
       await updateDoc(userRef, {
         name: formData.name,
-        role: formData.role,
+        roleKey: formData.roleKey,
         // Não atualizamos o e-mail aqui pois isso exigiria atualizar também no Firebase Auth
       });
 
@@ -211,13 +211,13 @@ export default function UserEdit() {
             </div>
 
             <div>
-              <label htmlFor="role" className="block text-sm font-medium text-white mb-1">
+              <label htmlFor="roleKey" className="block text-sm font-medium text-white mb-1">
                 Perfil
               </label>
               <select
-                id="role"
-                name="role"
-                value={formData.role}
+                id="roleKey"
+                name="roleKey"
+                value={formData.roleKey}
                 onChange={handleChange}
                 className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-3 text-white"
                 required

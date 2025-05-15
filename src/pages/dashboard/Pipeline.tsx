@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, updateDoc, where } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, where, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { Eye, Pencil, X, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import '../../styles/pipeline.css';
 import { getClientContactInfo } from '../../services/getClientContactInfo';
+import { useRolePermissions } from '../../hooks/useRolePermissions';
 
 interface Proposal {
   id: string;
@@ -84,6 +85,51 @@ const pipelineStatusHeaderColors = {
 
 const pipelineStatusOrder = ['submitted', 'pre_analysis', 'credit', 'legal', 'contract', 'closed', 'lost'];
 
+// Função auxiliar para processar documentos de propostas
+const processProposalDocs = async (docs: any[]) => {
+  const proposalsData = docs.map(doc => {
+    const data = doc.data();
+    // Verificar se o clientId existe e não está vazio
+    if (!data.clientId || data.clientId.trim() === '') {
+      console.error(`Proposta ${doc.id} com clientId inválido:`, data.clientId);
+    }
+
+    // Obter o nome do banco se o bankId existir
+    let bankName = '';
+    if (data.bankId) {
+      bankName = data.bankName || 'Banco sem nome';
+    }
+
+    return {
+      id: doc.id,
+      proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
+      clientName: data.clientName || 'Nome não disponível',
+      clientId: data.clientId || '',
+      desiredCredit: data.desiredCredit || 0,
+      hasProperty: data.hasProperty || false,
+      propertyValue: data.propertyValue || 0,
+      status: data.status || 'pending',
+      pipelineStatus: data.pipelineStatus || 'submitted',
+      createdAt: data.createdAt?.toDate() || new Date(),
+      userId: data.userId || '',
+      creditLine: data.creditLine || '',
+      creditReason: data.creditReason || '',
+      bankId: data.bankId || '',
+      bankName: bankName,
+      bankCommission: data.bankCommission || '',
+      observationsTimeline: data.observationsTimeline || [],
+      previousPipelineStatus: data.previousPipelineStatus,
+      clientEmail: data.clientEmail || '',
+      clientPhone: data.clientPhone || '',
+      clientDDI: data.clientDDI || '+55',
+      clientType: data.clientType || '',
+      partnerEmail: data.partnerEmail || '',
+    };
+  }) as Proposal[];
+
+  return proposalsData;
+};
+
 export default function Pipeline() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [filteredProposals, setFilteredProposals] = useState<Proposal[]>([]);
@@ -100,6 +146,8 @@ export default function Pipeline() {
 
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { getDataScope } = useRolePermissions();
+  const proposalsScope = getDataScope('proposals'); // Pode ser 'all', 'team' ou 'own'
 
   // Estado para controlar se o acordeon de filtros está aberto ou fechado
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -181,15 +229,187 @@ export default function Pipeline() {
   const fetchProposals = async () => {
     try {
       setLoading(true);
+      
+      // Adicionar logs para depuração
+      console.log('Verificando permissões do usuário para Pipeline:', {
+        roleKey: user?.roleKey,
+        proposalsScope,
+        hasTeam: !!user?.team,
+        userId: user?.id
+      });
+      
       let q;
 
-      if (user?.role === 'client') {
-        q = query(collection(db, 'proposals'), where('userId', '==', user.id));
-      } else {
+      if (proposalsScope === 'all') {
+        console.log('Buscando todas as propostas (admin)');
         q = query(collection(db, 'proposals'));
+      } else if (proposalsScope === 'team' && user?.team && user?.roleKey === 'manager') {
+        console.log('Buscando propostas da equipe (gerente)');
+        
+        // Para gerentes, buscar todas as propostas e filtrar manualmente
+        // para incluir as criadas pelo gerente e as da equipe dele
+        try {
+          console.log(`Gerente com equipe: ${user.team}`);
+          
+          // Buscar usuários da equipe
+          const usersCollection = collection(db, 'users');
+          const teamField = 'team'; // Ajuste conforme a estrutura do seu banco de dados
+          const teamUsersQuery = query(usersCollection, where(teamField, '==', user.team));
+          const teamUsersSnapshot = await getDocs(teamUsersQuery);
+          
+          // Buscar informações da equipe
+          const teamDoc = await getDoc(doc(db, 'teams', user.team));
+          if (teamDoc.exists()) {
+            const teamData = teamDoc.data();
+            const teamUserIds = teamUsersSnapshot.docs.map(doc => doc.id);
+            const teamUserEmails = teamUsersSnapshot.docs.map(doc => doc.data().email).filter(Boolean);
+            
+            console.log(`Usuários encontrados na equipe: ${teamUserIds.length}`);
+            console.log('IDs dos usuários da equipe:', teamUserIds);
+            console.log('Emails dos usuários da equipe:', teamUserEmails);
+            
+            // Buscar todas as propostas
+            const allProposalsRef = collection(db, 'proposals');
+            const allProposalsSnapshot = await getDocs(allProposalsRef);
+            console.log(`Total de propostas no banco: ${allProposalsSnapshot.size}`);
+            
+            // Filtrar propostas do gerente e da equipe
+            const managerProposals: any[] = [];
+            
+            allProposalsSnapshot.forEach(doc => {
+              const data = doc.data();
+              let isMatch = false;
+              
+              // Verificar se a proposta pertence ao gerente ou a alguém da equipe
+              // ou se o cliente está vinculado à equipe pelo teamName
+              isMatch = data.userId === user.id || 
+                       data.createdBy === user.email || 
+                       data.inviterUserId === user.id || 
+                       teamUserIds.includes(data.userId) || 
+                       teamUserEmails.includes(data.createdBy) || 
+                       teamUserEmails.includes(data.partnerEmail) || 
+                       teamUserEmails.includes(data.clientEmail) ||
+                       data.teamName === teamData.name ||
+                       data.teamId === user.team;
+              
+              if (isMatch) {
+                managerProposals.push({
+                  id: doc.id,
+                  proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
+                  ...data,
+                  createdAt: data.createdAt?.toDate() || new Date(),
+                  observationsTimeline: data.observationsTimeline || [],
+                  pendencies: data.pendencies || [],
+                  lastPendency: data.pendencies && data.pendencies.length > 0
+                    ? data.pendencies[data.pendencies.length - 1]
+                    : null
+                });
+              }
+            });
+            
+            console.log(`Propostas filtradas para o gerente: ${managerProposals.length}`);
+            setProposals(managerProposals);
+            setFilteredProposals(managerProposals);
+            setLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error('Erro ao buscar propostas do gerente:', error);
+          // Em caso de erro, continuar com a busca padrão
+        }
+        
+        // Fallback: usar a query padrão
+        q = query(collection(db, 'proposals'), where('team', '==', user.team));
+      } else if (proposalsScope === 'team') {
+        // Caso o usuário tenha permissão de visualizar propostas da equipe, 
+        // mas não tenha um ID de equipe definido
+        console.log('Usuário tem permissão para ver propostas da equipe, mas não tem equipe definida');
+        // Buscar propostas criadas por este usuário
+        // NOTA: createdBy armazena o email do usuário, não o ID
+        q = query(collection(db, 'proposals'), where('createdBy', '==', user?.email));
+        console.log(`Buscando propostas por createdBy (email): ${user?.email}`);
+      } else if (proposalsScope === 'own') {
+        console.log('Buscando apenas propostas próprias (cliente/parceiro)');
+        // Verificar se o usuário é um parceiro para buscar também por partnerEmail
+        if (user?.roleKey === 'partner' && user?.email) {
+          console.log(`Usuário é parceiro, buscando propostas para: ${user.email} (ID: ${user.id})`);
+          
+          try {
+            // Se for parceiro, buscar primeiro os clientes onde ele é o inviterUserId
+            let clientIdsFromInviter: string[] = [];
+            console.log('Buscando clientes onde o parceiro é o inviterUserId...');
+            
+            const clientsQuery = query(collection(db, 'registrations'), where('inviterUserId', '==', user.id));
+            const clientsSnapshot = await getDocs(clientsQuery);
+            console.log(`Encontrados ${clientsSnapshot.size} clientes onde o parceiro é o inviterUserId`);
+            
+            // Extrair IDs dos clientes
+            clientIdsFromInviter = clientsSnapshot.docs.map(doc => doc.id);
+            console.log('IDs dos clientes encontrados:', clientIdsFromInviter);
+            
+            // Buscar TODAS as propostas
+            console.log('Buscando todas as propostas para filtrar manualmente...');
+            const allProposalsRef = collection(db, 'proposals');
+            const allProposalsSnapshot = await getDocs(allProposalsRef);
+            console.log(`Total de propostas no banco: ${allProposalsSnapshot.size}`);
+            
+            // Filtrar propostas do parceiro
+            const partnerProposals: any[] = [];
+            
+            allProposalsSnapshot.forEach(doc => {
+              const data = doc.data();
+              let isMatch = false;
+              
+              // Verificar se o clientId da proposta está na lista de clientes do parceiro
+              const isClientFromPartner = clientIdsFromInviter.includes(data.clientId);
+              console.log(`Proposta ${doc.id} - Cliente ${data.clientId} - É do parceiro? ${isClientFromPartner}`);
+              
+              isMatch = data.userId === user.id || 
+                       data.createdBy === user.email || 
+                       data.partnerEmail === user.email ||
+                       data.inviterUserId === user.id || 
+                       isClientFromPartner;
+                       
+              if (isMatch) {
+                partnerProposals.push({
+                  id: doc.id,
+                  proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
+                  ...data,
+                  createdAt: data.createdAt?.toDate() || new Date(),
+                  observationsTimeline: data.observationsTimeline || [],
+                  pendencies: data.pendencies || [],
+                  lastPendency: data.pendencies && data.pendencies.length > 0
+                    ? data.pendencies[data.pendencies.length - 1]
+                    : null
+                });
+              }
+            });
+            
+            console.log(`Propostas filtradas para o parceiro: ${partnerProposals.length}`);
+            setProposals(partnerProposals);
+            setFilteredProposals(partnerProposals);
+            setLoading(false);
+            return;
+          } catch (error) {
+            console.error('Erro ao buscar propostas do parceiro:', error);
+            // Em caso de erro, continuar com a busca padrão
+          }
+        } else {
+          // Para usuários normais, buscar por userId e createdBy
+          console.log(`Buscando propostas por userId: ${user?.id} e createdBy: ${user?.email}`);
+          q = query(collection(db, 'proposals'), where('userId', '==', user?.id));
+        }
+      } else {
+        console.log('Usuário sem permissões para visualizar propostas');
+        setProposals([]);
+        setFilteredProposals([]);
+        setLoading(false);
+        return;
       }
 
+      console.log('Executando consulta ao Firestore para buscar propostas');
       const querySnapshot = await getDocs(q);
+      console.log(`Encontradas ${querySnapshot.size} propostas`);
 
       // Buscar todos os bancos para mapear IDs para nomes
       const banksSnapshot = await getDocs(collection(db, 'banks'));
@@ -261,16 +481,25 @@ export default function Pipeline() {
   };
 
   const handleDragStart = (proposalId: string) => {
+    // Parceiros não podem mover cards
+    if (user?.roleKey === 'partner') return;
+    
     setDraggedProposal(proposalId);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    // Parceiros não podem mover cards
+    if (user?.roleKey === 'partner') return;
+    
     e.preventDefault();
   };
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>, targetStatus: Proposal['pipelineStatus']) => {
     e.preventDefault();
 
+    // Parceiros não podem mover cards
+    if (user?.roleKey === 'partner') return;
+    
     if (!draggedProposal) return;
 
     const proposal = proposals.find(p => p.id === draggedProposal);
@@ -602,8 +831,8 @@ export default function Pipeline() {
                           {getProposalsByStatus(status as Proposal['pipelineStatus']).map((proposal) => (
                             <div 
                               key={proposal.id} 
-                              className="bg-gray-900 rounded-lg shadow-md overflow-hidden cursor-move mb-4 w-full box-border border border-gray-800 hover:shadow-lg transition-all"
-                              draggable
+                              className={`bg-gray-900 rounded-lg shadow-md overflow-hidden ${user?.roleKey !== 'partner' ? 'cursor-move' : 'cursor-default'} mb-4 w-full box-border border border-gray-800 hover:shadow-lg transition-all`}
+                              draggable={user?.roleKey !== 'partner'}
                               onDragStart={() => handleDragStart(proposal.id)}
                             >
                               {/* Indicador de status no topo do cartão */}

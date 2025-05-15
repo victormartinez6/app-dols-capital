@@ -1,54 +1,70 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, Pencil, Trash2, Search, X, Eye, Lock, Unlock } from 'lucide-react';
+import { UserPlus, Pencil, Trash2, Search, X, Eye, Lock, Unlock, UsersRound } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { createUserWithRole, deleteUserDocument, updateUserBlockStatus, deleteAuthUser, disableAuthUser } from '../../services/UserService';
+import { createUserWithRole, deleteUserDocument, updateUserBlockStatus, disableAuthUser } from '../../services/UserService';
+import { Team } from '../../types';
 
 const userSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
   email: z.string().email('E-mail inválido'),
   password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
-  role: z.enum(['client', 'manager', 'admin'], {
-    required_error: 'Selecione um perfil',
-  }),
+  roleId: z.string().min(1, 'Selecione um perfil'),
+  team: z.string().optional(),
+});
+
+const editUserSchema = z.object({
+  name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
+  email: z.string().email('E-mail inválido'),
+  password: z.string().optional(), // Senha opcional na edição
+  roleId: z.string().min(1, 'Selecione um perfil'),
+  team: z.string().optional(),
 });
 
 type UserFormData = z.infer<typeof userSchema>;
+type EditUserFormData = z.infer<typeof editUserSchema>;
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'client' | 'manager' | 'admin';
+  roleKey: 'client' | 'manager' | 'admin' | 'partner';
   createdAt: any;
   createdBy: string;
   hasRegistration?: boolean;
   registrationType?: 'PF' | 'PJ';
   lastAccess?: any;
   blocked?: boolean;
+  team?: string;
+  teamName?: string;
+  teamCode?: string;
 }
 
 const roleLabels = {
   client: 'Cliente',
   manager: 'Gerente',
   admin: 'Administrador',
+  partner: 'Parceiro',
 };
 
 const roleColors = {
   client: 'text-blue-400 bg-blue-400/10',
   manager: 'text-green-400 bg-green-400/10',
   admin: 'text-purple-400 bg-purple-400/10',
+  partner: 'text-amber-400 bg-amber-400/10',
 };
 
 export default function Users() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,11 +77,31 @@ export default function Users() {
   const [userToBlock, setUserToBlock] = useState<string | null>(null);
   const [userToBlockName, setUserToBlockName] = useState<string | null>(null);
   const [userBlockStatus, setUserBlockStatus] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [userToAssignTeam, setUserToAssignTeam] = useState<string | null>(null);
+  const [userToAssignTeamName, setUserToAssignTeamName] = useState<string | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<string>('');
+  const [isAssigningTeam, setIsAssigningTeam] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<{id: string, name: string, key: string}[]>([]);
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({
+    client: 'Cliente',
+    manager: 'Gerente',
+    admin: 'Administrador',
+    partner: 'Parceiro'
+  });
+  const [roleColors, setRoleColors] = useState<Record<string, string>>({
+    client: 'text-blue-400 bg-blue-400/10',
+    manager: 'text-green-400 bg-green-400/10',
+    admin: 'text-purple-400 bg-purple-400/10',
+    partner: 'text-amber-400 bg-amber-400/10'
+  });
 
   // Filtros
   const [nameFilter, setNameFilter] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'client' | 'manager' | 'admin'>('all');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
   const [registrationFilter, setRegistrationFilter] = useState<'all' | 'yes' | 'no'>('all');
+  const [teamFilter, setTeamFilter] = useState<string>('');
   
   // Estado para controlar se o acordeon de filtros está aberto ou fechado
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -82,13 +118,35 @@ export default function Users() {
     resolver: zodResolver(userSchema),
   });
 
+  const { register: editRegister, handleSubmit: editHandleSubmit, formState: { errors: editErrors }, reset: editReset } = useForm<EditUserFormData>({
+    resolver: zodResolver(editUserSchema),
+  });
+
   useEffect(() => {
     fetchUsers();
+    fetchTeams();
+    fetchRoles();
   }, []);
 
   useEffect(() => {
     applyFilters();
-  }, [users, nameFilter, roleFilter, registrationFilter]);
+  }, [users, nameFilter, roleFilter, registrationFilter, teamFilter]);
+
+  const fetchTeams = async () => {
+    try {
+      const teamsCollection = collection(db, 'teams');
+      const teamsSnapshot = await getDocs(teamsCollection);
+      
+      const teamsData = teamsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Team[];
+      
+      setTeams(teamsData);
+    } catch (err) {
+      console.error('Erro ao buscar equipes:', err);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -103,8 +161,33 @@ export default function Users() {
         lastAccess: doc.data().lastAccess || null
       })) as User[];
 
-      setUsers(usersData);
-      setFilteredUsers(usersData);
+      // Buscar nomes das equipes para cada usuário
+      const usersWithTeamNames = await Promise.all(
+        usersData.map(async (user) => {
+          if (user.team) {
+            try {
+              const teamDoc = await getDoc(doc(db, 'teams', user.team));
+              if (teamDoc.exists()) {
+                return {
+                  ...user,
+                  teamName: teamDoc.data().name,
+                  teamCode: teamDoc.data().teamCode || ''
+                };
+              }
+            } catch (err) {
+              console.error(`Erro ao buscar equipe para usuário ${user.id}:`, err);
+            }
+          }
+          return {
+            ...user,
+            teamName: user.team ? 'Equipe não encontrada' : '',
+            teamCode: ''
+          };
+        })
+      );
+
+      setUsers(usersWithTeamNames);
+      setFilteredUsers(usersWithTeamNames);
     } catch (err) {
       console.error('Erro ao buscar usuários:', err);
       setError('Falha ao carregar usuários. Por favor, tente novamente.');
@@ -126,7 +209,7 @@ export default function Users() {
 
     // Filtro por perfil
     if (roleFilter !== 'all') {
-      result = result.filter(user => user.role === roleFilter);
+      result = result.filter(user => user.roleKey === roleFilter);
     }
 
     // Filtro por cadastro
@@ -138,6 +221,11 @@ export default function Users() {
       }
     }
 
+    // Filtro por equipe
+    if (teamFilter) {
+      result = result.filter(user => user.team === teamFilter);
+    }
+
     setFilteredUsers(result);
   };
 
@@ -145,6 +233,63 @@ export default function Users() {
     setNameFilter('');
     setRoleFilter('all');
     setRegistrationFilter('all');
+    setTeamFilter('');
+  };
+
+  const fetchRoles = async () => {
+    try {
+      const rolesCollection = collection(db, 'roles');
+      const querySnapshot = await getDocs(rolesCollection);
+      
+      const rolesData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as {id: string, name: string, key: string}[];
+      
+      setAvailableRoles(rolesData);
+      
+      // Atualizar dinamicamente os labels e cores dos perfis
+      const newRoleLabels: Record<string, string> = {};
+      const newRoleColors: Record<string, string> = {
+        // Cores padrão para perfis conhecidos
+        client: 'text-blue-400 bg-blue-400/10',
+        manager: 'text-green-400 bg-green-400/10',
+        admin: 'text-purple-400 bg-purple-400/10',
+        partner: 'text-amber-400 bg-amber-400/10'
+      };
+      
+      // Adicionar todos os perfis do Firestore
+      rolesData.forEach(role => {
+        newRoleLabels[role.key] = role.name;
+        
+        // Se não tiver uma cor definida, atribuir uma cor padrão
+        if (!newRoleColors[role.key]) {
+          newRoleColors[role.key] = 'text-gray-400 bg-gray-400/10';
+        }
+      });
+      
+      setRoleLabels(newRoleLabels);
+      setRoleColors(newRoleColors);
+      
+      // Atualizar as opções do filtro de perfil
+      const roleFilterSelect = document.getElementById('roleFilter');
+      if (roleFilterSelect && roleFilterSelect instanceof HTMLSelectElement) {
+        // Remover todas as opções exceto "Todos"
+        while (roleFilterSelect.options.length > 1) {
+          roleFilterSelect.remove(1);
+        }
+        
+        // Adicionar as novas opções
+        rolesData.forEach(role => {
+          const option = document.createElement('option');
+          option.value = role.key;
+          option.text = role.name;
+          roleFilterSelect.add(option);
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao buscar perfis:', error);
+    }
   };
 
   const onSubmit = async (data: UserFormData) => {
@@ -153,7 +298,7 @@ export default function Users() {
       setIsCreatingUser(true);
 
       // Verificar se o usuário atual é um administrador
-      if (!currentUser || currentUser.role !== 'admin') {
+      if (!currentUser || currentUser.roleKey !== 'admin') {
         setError('Você não tem permissão para criar novos usuários.');
         setIsCreatingUser(false);
         return;
@@ -176,7 +321,8 @@ export default function Users() {
           name: data.name,
           email: data.email,
           password: data.password,
-          role: data.role
+          roleId: data.roleId,
+          team: data.team
         }, currentUser.id);
 
         // Fechar o modal e limpar o formulário
@@ -203,6 +349,63 @@ export default function Users() {
     }
   };
 
+  const onEditSubmit = async (data: EditUserFormData) => {
+    if (!userToEdit) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Encontrar a chave do perfil com base no ID do perfil
+      const selectedRole = availableRoles.find(role => role.id === data.roleId);
+      
+      if (!selectedRole) {
+        throw new Error('Perfil inválido');
+      }
+      
+      // Referência ao documento do usuário
+      const userRef = doc(db, 'users', userToEdit.id);
+      
+      // Dados a serem atualizados
+      const updateData: any = {
+        name: data.name,
+        roleKey: selectedRole.key,
+        team: data.team || null,
+        updatedAt: new Date()
+      };
+      
+      // Atualizar o e-mail apenas se for diferente
+      if (data.email !== userToEdit.email) {
+        // Aqui você precisaria implementar a lógica para atualizar o e-mail no Firebase Auth
+        // Isso geralmente requer uma função do lado do servidor (Cloud Function)
+        // Por enquanto, vamos apenas atualizar no Firestore
+        updateData.email = data.email;
+      }
+      
+      // Atualizar a senha apenas se for fornecida
+      if (data.password && data.password.trim() !== '') {
+        // Aqui você precisaria implementar a lógica para atualizar a senha no Firebase Auth
+        // Isso geralmente requer uma função do lado do servidor (Cloud Function)
+        console.log('Senha seria atualizada para:', data.password);
+      }
+      
+      // Atualizar o documento no Firestore
+      await updateDoc(userRef, updateData);
+      
+      // Fechar modal e atualizar lista
+      setIsEditModalOpen(false);
+      setUserToEdit(null);
+      editReset();
+      fetchUsers();
+      
+    } catch (error: any) {
+      console.error('Erro ao atualizar usuário:', error);
+      setError(error.message || 'Erro ao atualizar usuário');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteUser = (userId: string, userName: string) => {
     setUserToDelete(userId);
     setUserToDeleteName(userName);
@@ -216,14 +419,8 @@ export default function Users() {
       // Excluir o documento do usuário no Firestore
       await deleteUserDocument(userToDelete);
       
-      // Tentar excluir o usuário no Firebase Authentication (se existir)
-      try {
-        await deleteAuthUser(userToDelete);
-        console.log('Usuário excluído do Firebase Authentication com sucesso');
-      } catch (authError) {
-        console.warn('Não foi possível excluir o usuário do Firebase Authentication:', authError);
-        // Não interromper o fluxo se falhar no Firebase Authentication
-      }
+      // Não tentar excluir o usuário no Firebase Authentication
+      // Isso deve ser feito manualmente pelo administrador no console do Firebase
       
       // Atualizar a interface
       setUsers(prev => prev.filter(user => user.id !== userToDelete));
@@ -231,7 +428,14 @@ export default function Users() {
       setUserToDelete(null);
       setUserToDeleteName(null);
       
-      alert('Usuário excluído com sucesso!');
+      alert(`Usuário excluído com sucesso do banco de dados! 
+    
+IMPORTANTE: Para completar a exclusão, você precisa excluir manualmente o usuário na seção Authentication do Firebase Console:
+1. Acesse https://console.firebase.google.com/project/dols-capital-app/authentication/users
+2. Localize o usuário pelo ID: ${userToDelete}
+3. Clique nos três pontos à direita e selecione "Excluir conta"
+
+Esta etapa manual é necessária porque o Firebase não permite que o frontend exclua usuários da autenticação diretamente por questões de segurança.`);
     } catch (err) {
       console.error('Erro ao excluir usuário:', err);
       setError('Falha ao excluir usuário. Por favor, tente novamente.');
@@ -243,9 +447,55 @@ export default function Users() {
     navigate(`/users/detail/${userId}`);
   };
 
-  const handleEditUser = (userId: string) => {
-    console.log('Editando usuário:', userId);
-    navigate(`/users/edit/${userId}`);
+  const handleEditUser = async (userId: string) => {
+    try {
+      setLoading(true);
+      // Buscar dados completos do usuário
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        
+        // Encontrar o ID do perfil com base na chave do perfil
+        const roleId = availableRoles.find(role => role.key === userData.roleKey)?.id || '';
+        
+        // Configurar o usuário para edição
+        setUserToEdit({
+          id: userId,
+          name: userData.name || '',
+          email: userData.email || '',
+          roleKey: userData.roleKey || 'client',
+          createdAt: userData.createdAt,
+          createdBy: userData.createdBy || '',
+          hasRegistration: userData.hasRegistration || false,
+          registrationType: userData.registrationType,
+          lastAccess: userData.lastAccess,
+          blocked: userData.blocked || false,
+          team: userData.team || '',
+          teamName: userData.teamName || '',
+          teamCode: userData.teamCode || ''
+        });
+        
+        // Preencher o formulário com os dados do usuário
+        editReset({
+          name: userData.name || '',
+          email: userData.email || '',
+          password: '', // Campo de senha vazio na edição
+          roleId: roleId,
+          team: userData.team || ''
+        });
+        
+        // Abrir o modal de edição
+        setIsEditModalOpen(true);
+      } else {
+        setError('Usuário não encontrado');
+      }
+    } catch (error) {
+      console.error('Erro ao buscar dados do usuário:', error);
+      setError('Erro ao buscar dados do usuário');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBlockUser = (userId: string, userName: string, currentBlockStatus: boolean) => {
@@ -292,6 +542,96 @@ export default function Users() {
     }
   };
 
+  const handleAssignTeam = (userId: string, userName: string) => {
+    setUserToAssignTeam(userId);
+    setUserToAssignTeamName(userName);
+    setSelectedTeam('');
+    setShowTeamModal(true);
+  };
+
+  const confirmAssignTeam = async () => {
+    if (!userToAssignTeam || !selectedTeam) return;
+
+    try {
+      setIsAssigningTeam(true);
+      
+      // Atualizar o documento do usuário no Firestore
+      const userRef = doc(db, 'users', userToAssignTeam);
+      await updateDoc(userRef, {
+        team: selectedTeam
+      });
+
+      // Buscar o nome da equipe para exibição
+      const teamDoc = await getDoc(doc(db, 'teams', selectedTeam));
+      const teamName = teamDoc.exists() ? teamDoc.data().name : 'Equipe não encontrada';
+      const teamCode = teamDoc.exists() ? teamDoc.data().teamCode || '' : '';
+
+      // Atualizar o estado local
+      setUsers(users.map(user => {
+        if (user.id === userToAssignTeam) {
+          return {
+            ...user,
+            team: selectedTeam,
+            teamName,
+            teamCode
+          };
+        }
+        return user;
+      }));
+
+      // Verificar se o usuário tem um cadastro de cliente e atualizar também
+      const registrationRef = doc(db, 'registrations', userToAssignTeam);
+      const registrationDoc = await getDoc(registrationRef);
+      
+      if (registrationDoc.exists()) {
+        console.log('Atualizando equipe no cadastro do cliente');
+        await updateDoc(registrationRef, {
+          teamCode: teamCode || '',
+          teamName: teamName || ''
+        });
+        
+        // Atualizar também todas as propostas relacionadas a este cliente
+        try {
+          // Buscar todas as propostas relacionadas a este cliente
+          const proposalsQuery = query(
+            collection(db, 'proposals'),
+            where('clientId', '==', userToAssignTeam)
+          );
+          const proposalsSnapshot = await getDocs(proposalsQuery);
+          
+          // Atualizar cada proposta com os dados atualizados da equipe
+          const proposalUpdates = proposalsSnapshot.docs.map(async (proposalDoc) => {
+            const proposalRef = doc(db, 'proposals', proposalDoc.id);
+            return updateDoc(proposalRef, {
+              teamCode: teamCode || '',
+              teamName: teamName || ''
+            });
+          });
+          
+          // Executar todas as atualizações em paralelo
+          if (proposalUpdates.length > 0) {
+            console.log(`Atualizando equipe em ${proposalUpdates.length} propostas relacionadas`);
+            await Promise.all(proposalUpdates);
+          }
+        } catch (err) {
+          console.error('Erro ao atualizar propostas relacionadas:', err);
+          // Não interromper o fluxo principal se houver erro na atualização das propostas
+        }
+      }
+
+      // Fechar o modal
+      setShowTeamModal(false);
+      setUserToAssignTeam(null);
+      setUserToAssignTeamName(null);
+      setSelectedTeam('');
+    } catch (err) {
+      console.error('Erro ao atribuir equipe:', err);
+      alert('Erro ao atribuir equipe. Por favor, tente novamente.');
+    } finally {
+      setIsAssigningTeam(false);
+    }
+  };
+
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'Não disponível';
 
@@ -310,7 +650,7 @@ export default function Users() {
     <div className="dark-card rounded-lg p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-semibold text-white">Usuários</h2>
-        {currentUser?.role === 'admin' && (
+        {currentUser?.roleKey === 'admin' && (
           <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100"
@@ -370,13 +710,13 @@ export default function Users() {
             <select
               id="roleFilter"
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as any)}
+              onChange={(e) => setRoleFilter(e.target.value)}
               className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="all">Todos</option>
-              <option value="client">Cliente</option>
-              <option value="manager">Gerente</option>
-              <option value="admin">Administrador</option>
+              {availableRoles.map(role => (
+                <option key={role.id} value={role.key}>{role.name}</option>
+              ))}
             </select>
           </div>
 
@@ -396,10 +736,28 @@ export default function Users() {
               <option value="no">Sem Cadastro</option>
             </select>
           </div>
+
+          {/* Filtro por equipe */}
+          <div>
+            <label htmlFor="teamFilter" className="block text-sm font-medium text-white mb-1">
+              Equipe
+            </label>
+            <select
+              id="teamFilter"
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Todas as equipes</option>
+              {teams.map(team => (
+                <option key={team.id} value={team.id}>{team.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Botão para limpar filtros */}
-        {(nameFilter || roleFilter !== 'all' || registrationFilter !== 'all') && (
+        {(nameFilter || roleFilter !== 'all' || registrationFilter !== 'all' || teamFilter) && (
           <button
             onClick={resetFilters}
             className="flex items-center text-sm text-white hover:text-blue-300"
@@ -442,6 +800,9 @@ export default function Users() {
                       Perfil
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Equipe
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
                       Cadastro
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
@@ -465,9 +826,21 @@ export default function Users() {
                         <div className="text-sm text-gray-300">{user.email}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
-                          {roleLabels[user.role]}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.roleKey] || 'text-gray-400 bg-gray-400/10'}`}>
+                          {roleLabels[user.roleKey] || user.roleKey}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {user.teamCode ? (
+                          <span 
+                            className="px-2 py-1 text-xs font-medium rounded-md bg-blue-900 text-blue-200 cursor-help"
+                            title={`Equipe: ${user.teamName}`}
+                          >
+                            {user.teamCode}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">Sem equipe</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm">
@@ -528,6 +901,13 @@ export default function Users() {
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
+                          <button
+                            onClick={() => handleAssignTeam(user.id, user.name)}
+                            className="text-blue-400 hover:text-blue-300 hover:drop-shadow-[0_0_4px_rgba(59,130,246,0.6)] transition-all"
+                            title="Atribuir Equipe"
+                          >
+                            <UsersRound className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -570,8 +950,8 @@ export default function Users() {
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
                       <div className="text-xs text-gray-400 mb-1">Perfil</div>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.role]}`}>
-                        {roleLabels[user.role]}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleColors[user.roleKey] || 'text-gray-400 bg-gray-400/10'}`}>
+                        {roleLabels[user.roleKey] || user.roleKey}
                       </span>
                     </div>
                     
@@ -589,10 +969,17 @@ export default function Users() {
                   
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
+                      <div className="text-xs text-gray-400 mb-1">Equipe</div>
+                      <div className="text-sm text-white">{user.teamName}</div>
+                    </div>
+                    
+                    <div>
                       <div className="text-xs text-gray-400 mb-1">Criado em</div>
                       <div className="text-sm text-white">{formatDate(user.createdAt)}</div>
                     </div>
-                    
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
                       <div className="text-xs text-gray-400 mb-1">Status</div>
                       {user.blocked ? (
@@ -637,6 +1024,15 @@ export default function Users() {
                       <span className="flex items-center">
                         <Trash2 className="h-3 w-3 mr-1" />
                         Excluir
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => handleAssignTeam(user.id, user.name)}
+                      className="px-3 py-1 rounded-md bg-blue-400/10 text-blue-400 hover:bg-blue-400/20 text-xs font-medium"
+                    >
+                      <span className="flex items-center">
+                        <UsersRound className="h-3 w-3 mr-1" />
+                        Atribuir Equipe
                       </span>
                     </button>
                   </div>
@@ -713,21 +1109,36 @@ export default function Users() {
                 </div>
 
                 <div>
-                  <label htmlFor="role" className="block text-sm font-medium text-white mb-1">
+                  <label htmlFor="roleId" className="block text-sm font-medium text-white mb-1">
                     Perfil
                   </label>
                   <select
-                    {...register('role')}
+                    {...register('roleId')}
                     className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="">Selecione um perfil</option>
-                    <option value="client">Cliente</option>
-                    <option value="manager">Gerente</option>
-                    <option value="admin">Administrador</option>
+                    {availableRoles.map(role => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
                   </select>
-                  {errors.role && (
-                    <p className="mt-1 text-sm text-red-500">{errors.role.message}</p>
+                  {errors.roleId && (
+                    <p className="mt-1 text-sm text-red-500">{errors.roleId.message}</p>
                   )}
+                </div>
+
+                <div>
+                  <label htmlFor="team" className="block text-sm font-medium text-white mb-1">
+                    Equipe
+                  </label>
+                  <select
+                    {...register('team')}
+                    className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione uma equipe</option>
+                    {teams.map(team => (
+                      <option key={team.id} value={team.id}>{team.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
@@ -749,6 +1160,132 @@ export default function Users() {
                         Criando...
                       </div>
                     ) : 'Criar Usuário'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Usuário */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+              <h3 className="text-lg font-medium text-white">
+                Editar Usuário
+              </h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {error && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500 rounded-md text-red-500 text-sm">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={editHandleSubmit(onEditSubmit)} className="space-y-4">
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-white mb-1">
+                    Nome
+                  </label>
+                  <input
+                    type="text"
+                    {...editRegister('name')}
+                    className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  {editErrors.name && (
+                    <p className="mt-1 text-sm text-red-500">{editErrors.name.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-white mb-1">
+                    E-mail
+                  </label>
+                  <input
+                    type="email"
+                    {...editRegister('email')}
+                    className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  {editErrors.email && (
+                    <p className="mt-1 text-sm text-red-500">{editErrors.email.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-white mb-1">
+                    Senha
+                  </label>
+                  <input
+                    type="password"
+                    {...editRegister('password')}
+                    className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  {editErrors.password && (
+                    <p className="mt-1 text-sm text-red-500">{editErrors.password.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="roleId" className="block text-sm font-medium text-white mb-1">
+                    Perfil
+                  </label>
+                  <select
+                    {...editRegister('roleId')}
+                    className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione um perfil</option>
+                    {availableRoles.map(role => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                  {editErrors.roleId && (
+                    <p className="mt-1 text-sm text-red-500">{editErrors.roleId.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="team" className="block text-sm font-medium text-white mb-1">
+                    Equipe
+                  </label>
+                  <select
+                    {...editRegister('team')}
+                    className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione uma equipe</option>
+                    {teams.map(team => (
+                      <option key={team.id} value={team.id}>{team.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Salvando...
+                      </div>
+                    ) : 'Salvar Alterações'}
                   </button>
                 </div>
               </form>
@@ -815,6 +1352,61 @@ export default function Users() {
                 className={`px-4 py-2 ${userBlockStatus ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'} text-white rounded-md`}
               >
                 {userBlockStatus ? 'Desbloquear' : 'Bloquear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Atribuição de Equipe */}
+      {showTeamModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-medium text-white mb-4">Atribuir Equipe</h3>
+            <p className="text-gray-300 mb-4">
+              Selecione uma equipe para o usuário <span className="font-medium text-white">{userToAssignTeamName}</span>.
+            </p>
+            
+            <div className="mb-4">
+              <label htmlFor="teamSelect" className="block text-sm font-medium text-white mb-1">
+                Equipe
+              </label>
+              <select
+                id="teamSelect"
+                value={selectedTeam}
+                onChange={(e) => setSelectedTeam(e.target.value)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">Selecione uma equipe</option>
+                {teams.map(team => (
+                  <option key={team.id} value={team.id}>{team.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowTeamModal(false);
+                  setUserToAssignTeam(null);
+                  setUserToAssignTeamName(null);
+                  setSelectedTeam('');
+                }}
+                className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmAssignTeam}
+                disabled={!selectedTeam || isAssigningTeam}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAssigningTeam ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Atribuindo...
+                  </div>
+                ) : 'Atribuir Equipe'}
               </button>
             </div>
           </div>

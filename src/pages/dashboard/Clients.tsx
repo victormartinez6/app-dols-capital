@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, getDoc, arrayUnion } from 'firebase/firestore';
+import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../lib/firebase';
 import { Eye, Pencil, AlertCircle, CheckCircle2, Trash2, Building2, User, Search, X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -17,6 +18,10 @@ interface Registration {
   status: 'complete' | 'documents_pending';
   pipelineStatus: 'submitted' | 'pre_analysis' | 'credit' | 'legal' | 'contract';
   userId: string;
+  createdBy?: string;
+  inviterUserId?: string;
+  teamName?: string;
+  teamId?: string;
   documents?: Record<string, any>;
   pendencies?: Array<{
     message: string;
@@ -66,6 +71,7 @@ const formatFirestoreDate = (date: any): string => {
 };
 
 export default function Clients() {
+  const { user } = useAuth();
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [filteredRegistrations, setFilteredRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,7 +162,7 @@ export default function Clients() {
         }
       });
       
-      const registrationsData = querySnapshot.docs.map(doc => {
+      let registrationsData = querySnapshot.docs.map(doc => {
         const data = doc.data();
         // Verificar se tem documentos anexados
         const hasDocuments = data.documents && Object.keys(data.documents).length > 0;
@@ -190,6 +196,72 @@ export default function Clients() {
           })) : [],
         };
       }) as Registration[];
+      
+      // Filtrar registros com base no papel do usuário
+      if (user?.roleKey === 'partner') {
+        // Para parceiros, mostrar apenas os clientes criados pelo usuário e os que têm o inviterUserId
+        registrationsData = registrationsData.filter(reg => 
+          reg.userId === user.id || 
+          reg.createdBy === user.id || 
+          reg.createdBy === user.email || 
+          reg.partnerEmail === user.email ||
+          reg.inviterUserId === user.id
+        );
+      } else if (user?.roleKey === 'manager') {
+        // Para gerentes, mostrar apenas os clientes criados pelo gerente
+        // e os clientes vinculados à equipe dele
+        const teamId = user?.team;
+        
+        // Primeiro, filtramos os clientes criados pelo gerente
+        const managerClients = registrationsData.filter(reg => 
+          reg.userId === user.id || 
+          reg.createdBy === user.id || 
+          reg.createdBy === user.email ||
+          reg.inviterUserId === user.id
+        );
+        
+        // Se o gerente tem uma equipe, vamos buscar os clientes dos membros da equipe
+        if (teamId) {
+          // Buscar informações da equipe para obter os membros
+          const fetchTeamMembers = async () => {
+            try {
+              const teamDoc = await getDoc(doc(db, 'teams', teamId));
+              if (teamDoc.exists()) {
+                const teamData = teamDoc.data();
+                const teamMembers = teamData.members || [];
+                
+                // Buscar os usuários que são membros da equipe
+                const teamMemberClients = registrationsData.filter(reg => {
+                  // Verificar se o cliente foi criado por algum membro da equipe
+                  // ou se o cliente está vinculado à equipe pelo teamName
+                  return teamMembers.includes(reg.userId) || 
+                         teamMembers.includes(reg.createdBy) || 
+                         reg.teamName === teamData.name || 
+                         reg.teamId === teamId;
+                });
+                
+                // Combinar os clientes do gerente com os clientes da equipe
+                const uniqueClients = [...new Set([...managerClients, ...teamMemberClients])];
+                setRegistrations(uniqueClients);
+                setFilteredRegistrations(uniqueClients);
+                return;
+              }
+            } catch (error) {
+              console.error('Erro ao buscar membros da equipe:', error);
+            }
+            
+            // Se não conseguir buscar a equipe ou não houver membros, mostrar apenas os clientes do gerente
+            setRegistrations(managerClients);
+            setFilteredRegistrations(managerClients);
+          };
+          
+          fetchTeamMembers();
+          return; // Retornar aqui porque o setRegistrations será chamado dentro da função fetchTeamMembers
+        }
+        
+        // Se o gerente não tem equipe, mostrar apenas os clientes criados por ele
+        registrationsData = managerClients;
+      }
 
       setRegistrations(registrationsData);
       setFilteredRegistrations(registrationsData);
@@ -681,41 +753,54 @@ export default function Clients() {
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleGeneratePendency(registration.id)}
-                          className="text-purple-400 hover:text-purple-300 hover:drop-shadow-[0_0_4px_rgba(167,139,250,0.6)] transition-all"
-                          title="Gerar Pendência"
-                        >
-                          <AlertCircle className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleResolvePendency(registration.id)}
-                          title="Resolver Pendência"
-                          disabled={!registration.pendencies?.some(p => !p.resolved)}
-                          className={`${!registration.pendencies?.some(p => !p.resolved) ? 'opacity-50 cursor-not-allowed' : 'hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(134,239,172,0.6)]'} text-green-400 transition-all`}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setRegistrationToDelete(registration.id);
-                            setShowDeleteModal(true);
-                          }}
-                          className="text-rose-400 hover:text-rose-300 hover:drop-shadow-[0_0_4px_rgba(251,113,133,0.6)] transition-all"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setClientToChangeStatus(registration.id);
-                            setShowStatusModal(true);
-                          }}
-                          className="text-blue-400 hover:text-blue-300 hover:drop-shadow-[0_0_4px_rgba(59,130,246,0.6)] transition-all"
-                          title="Alterar Status"
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                        </button>
+                        {user?.roleKey !== 'partner' && (
+                          <>
+                            <button
+                              onClick={() => handleEditRegistration(registration)}
+                              className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
+                              title="Editar"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleGeneratePendency(registration.id)}
+                              className="text-purple-400 hover:text-purple-300 hover:drop-shadow-[0_0_4px_rgba(167,139,250,0.6)] transition-all"
+                              title="Gerar Pendência"
+                            >
+                              <AlertCircle className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleResolvePendency(registration.id)}
+                              title="Resolver Pendência"
+                              disabled={!registration.pendencies?.some(p => !p.resolved)}
+                              className={`${!registration.pendencies?.some(p => !p.resolved) ? 'opacity-50 cursor-not-allowed' : 'hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(134,239,172,0.6)]'} text-green-400 transition-all`}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRegistrationToDelete(registration.id);
+                                setShowDeleteModal(true);
+                              }}
+                              className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                        {user?.roleKey !== 'partner' && (
+                          <button
+                            onClick={() => {
+                              setClientToChangeStatus(registration.id);
+                              setShowStatusModal(true);
+                            }}
+                            className="text-blue-400 hover:text-blue-300 hover:drop-shadow-[0_0_4px_rgba(59,130,246,0.6)] transition-all"
+                            title="Alterar Status"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -830,49 +915,54 @@ export default function Clients() {
                     >
                       <Eye className="h-5 w-5" />
                     </button>
-                    <button
-                      onClick={() => handleEditRegistration(registration)}
-                      className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
-                      title="Editar"
-                    >
-                      <Pencil className="h-5 w-5" />
-                    </button>
-                    {registration.status === 'complete' && (
-                      <button
-                        onClick={() => {
-                          setRegistrationForPendency(registration.id);
-                          setShowPendencyModal(true);
-                        }}
-                        className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
-                        title="Gerar Pendência"
-                      >
-                        <AlertCircle className="h-5 w-5" />
-                      </button>
+                    {/* Mostrar os outros botões apenas se o usuário não for parceiro */}
+                    {user?.roleKey !== 'partner' && (
+                      <>
+                        <button
+                          onClick={() => handleEditRegistration(registration)}
+                          className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
+                          title="Editar"
+                        >
+                          <Pencil className="h-5 w-5" />
+                        </button>
+                        {registration.status === 'complete' && (
+                          <button
+                            onClick={() => {
+                              setRegistrationForPendency(registration.id);
+                              setShowPendencyModal(true);
+                            }}
+                            className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
+                            title="Gerar Pendência"
+                          >
+                            <AlertCircle className="h-5 w-5" />
+                          </button>
+                        )}
+                        
+                        {registration.status === 'documents_pending' && (
+                          <button
+                            onClick={() => {
+                              setClientToChangeStatus(registration.id);
+                              updateClientStatus('complete');
+                            }}
+                            className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
+                            title="Marcar como Completo"
+                          >
+                            <CheckCircle2 className="h-5 w-5" />
+                          </button>
+                        )}
+                        
+                        <button
+                          onClick={() => {
+                            setRegistrationToDelete(registration.id);
+                            setShowDeleteModal(true);
+                          }}
+                          className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </>
                     )}
-                    
-                    {registration.status === 'documents_pending' && (
-                      <button
-                        onClick={() => {
-                          setClientToChangeStatus(registration.id);
-                          updateClientStatus('complete');
-                        }}
-                        className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
-                        title="Marcar como Completo"
-                      >
-                        <CheckCircle2 className="h-5 w-5" />
-                      </button>
-                    )}
-                    
-                    <button
-                      onClick={() => {
-                        setRegistrationToDelete(registration.id);
-                        setShowDeleteModal(true);
-                      }}
-                      className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
-                      title="Excluir"
-                    >
-                      <Trash2 className="h-5 w-5" />
-                    </button>
                   </div>
                 </div>
               </div>

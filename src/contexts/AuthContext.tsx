@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
-  User as FirebaseUser,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -9,7 +8,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { User } from '../types';
 
@@ -17,7 +16,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  signUp: (email: string, password: string, name: string, teamId?: string | null) => Promise<void>;
   signOut: () => Promise<void>;
   updateUserPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   updateUserProfile: (userData: Partial<User>) => Promise<void>;
@@ -36,23 +35,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data();
-            setUser({
+            
+            // Garantir que todos os campos necessários existam
+            const user = {
               id: userDoc.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              registrationType: userData.registrationType,
+              email: userData.email || firebaseUser.email || '',
+              name: userData.name || '',
+              roleId: userData.roleId || userData.role?.id || '', 
+              roleKey: userData.roleKey || userData.role || 'user', 
+              roleName: userData.roleName || (userData.roleKey === 'admin' ? 'Administrador' : 'Usuário'),
+              registrationType: userData.registrationType || null,
+              team: userData.team || null,
               createdAt: userData.createdAt?.toDate() || new Date(),
-            } as User);
+            } as User;
+            
+            console.log('Usuário autenticado:', user);
+            setUser(user);
           } else {
-            await firebaseSignOut(auth);
-            setUser(null);
+            console.warn('Documento do usuário não encontrado. Criando perfil básico.');
+            // Criar um perfil básico para o usuário
+            const basicUserData = {
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              name: firebaseUser.displayName || '',
+              roleId: '',
+              roleKey: 'user',
+              roleName: 'Usuário',
+              createdAt: new Date()
+            };
+            
+            // Salvar o perfil básico no Firestore
+            try {
+              await setDoc(doc(db, 'users', firebaseUser.uid), {
+                email: basicUserData.email,
+                name: basicUserData.name,
+                roleKey: basicUserData.roleKey,
+                roleName: basicUserData.roleName,
+                createdAt: serverTimestamp()
+              });
+              
+              setUser(basicUserData as User);
+            } catch (error) {
+              console.error('Erro ao criar perfil básico:', error);
+              await firebaseSignOut(auth);
+              setUser(null);
+            }
           }
         } else {
           setUser(null);
         }
       } catch (error) {
-        console.error('Error in auth state change:', error);
+        console.error('Erro ao verificar autenticação:', error);
         setUser(null);
       } finally {
         setLoading(false);
@@ -64,66 +97,181 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      console.log('Autenticação Firebase bem-sucedida. UID:', userCredential.user.uid);
+      console.log('AuthContext - Iniciando login para:', email);
       
+      // Tratamento especial para o email do administrador
+      const isAdminEmail = email === 'victor@cambiohoje.com.br';
+      if (isAdminEmail) {
+        console.log('AuthContext - Usuário é o administrador principal (victor@cambiohoje.com.br)');
+      }
+      
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
-      console.log('Documento do usuário existe?', userDoc.exists());
       
       if (!userDoc.exists()) {
-        console.log('Documento do usuário não encontrado no Firestore. Criando documento...');
+        console.log('AuthContext - Perfil de usuário não encontrado, criando perfil básico');
         
-        // Criar o documento do usuário no Firestore
+        // Buscar o perfil padrão (cliente ou admin para o email especial)
+        let roleId = '';
+        let roleKey = isAdminEmail ? 'admin' : 'client';
+        let roleName = isAdminEmail ? 'Administrador' : 'Cliente';
+        
+        // Se não for o admin, buscar o perfil padrão de cliente
+        if (!isAdminEmail) {
+          const rolesCollection = await getDoc(doc(db, 'roles', 'cliente-padrao'));
+          if (rolesCollection.exists()) {
+            const roleData = rolesCollection.data();
+            roleId = rolesCollection.id;
+            roleKey = roleData.key;
+            roleName = roleData.name;
+          }
+        }
+        
         const userData = {
           email: userCredential.user.email || email,
           name: userCredential.user.displayName || 'Usuário',
-          role: 'client', // Papel padrão
+          roleId: roleId, 
+          roleKey: roleKey, 
+          roleName: roleName, 
           createdAt: serverTimestamp(),
         };
         
-        // Salvar o documento no Firestore
+        console.log('AuthContext - Criando perfil de usuário com dados:', userData);
         await setDoc(doc(db, 'users', userCredential.user.uid), userData);
         
-        // Definir o usuário no estado
         const user = {
           id: userCredential.user.uid,
           email: userData.email,
           name: userData.name,
-          role: userData.role,
+          roleId: userData.roleId,
+          roleKey: userData.roleKey,
+          roleName: userData.roleName,
           createdAt: new Date(),
         } as User;
         
+        console.log('AuthContext - Usuário autenticado com perfil criado:', user);
         setUser(user);
         return;
       }
 
       const userData = userDoc.data();
-      console.log('Dados do usuário recuperados:', userData);
+      console.log('AuthContext - Dados do usuário recuperados:', userData);
       
+      // Tratamento especial para o email do administrador
+      if (isAdminEmail) {
+        console.log('AuthContext - Aplicando perfil de administrador para', email);
+        const user = {
+          id: userDoc.id,
+          email: userData.email,
+          name: userData.name,
+          roleId: 'admin', 
+          roleKey: 'admin', 
+          roleName: 'Administrador', 
+          registrationType: userData.registrationType,
+          team: userData.team,
+          createdAt: userData.createdAt?.toDate() || new Date(),
+        } as User;
+        
+        console.log('AuthContext - Usuário autenticado com perfil de admin:', user);
+        setUser(user);
+        return;
+      }
+      
+      // Se o usuário é um cliente, buscar o roleId correto
+      if (userData.roleKey === 'client' || userData.role === 'client') {
+        console.log('AuthContext - Usuário é um cliente, buscando roleId correto');
+        
+        try {
+          // Buscar o perfil de cliente no banco de dados
+          const rolesCollection = collection(db, 'roles');
+          const q = query(rolesCollection, where('key', '==', 'client'));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const roleDoc = querySnapshot.docs[0];
+            console.log('AuthContext - Perfil de cliente encontrado:', roleDoc.id);
+            
+            // Atualizar o documento do usuário com o roleId correto
+            try {
+              await updateDoc(doc(db, 'users', userDoc.id), {
+                roleId: roleDoc.id
+              });
+              
+              console.log(`AuthContext - roleId atualizado para ${roleDoc.id} no banco de dados`);
+            } catch (error) {
+              console.error('AuthContext - Erro ao atualizar roleId no banco de dados:', error);
+            }
+            
+            const user = {
+              id: userDoc.id,
+              email: userData.email,
+              name: userData.name,
+              roleId: roleDoc.id, // Usar o ID do perfil de cliente encontrado
+              roleKey: 'client',
+              roleName: 'Cliente',
+              registrationType: userData.registrationType,
+              team: userData.team,
+              createdAt: userData.createdAt?.toDate() || new Date(),
+            } as User;
+            
+            console.log('AuthContext - Usuário autenticado com perfil de cliente:', user);
+            setUser(user);
+            return;
+          }
+        } catch (error) {
+          console.error('AuthContext - Erro ao buscar perfil de cliente:', error);
+        }
+      }
+      
+      // Para outros tipos de usuários
       const user = {
         id: userDoc.id,
         email: userData.email,
         name: userData.name,
-        role: userData.role,
+        roleId: userData.roleId || userData.role?.id || '', 
+        roleKey: userData.roleKey || userData.role || 'user', 
+        roleName: userData.roleName || 'Usuário', 
         registrationType: userData.registrationType,
+        team: userData.team,
         createdAt: userData.createdAt?.toDate() || new Date(),
       } as User;
       
+      console.log('AuthContext - Usuário autenticado:', user);
       setUser(user);
     } catch (error) {
-      console.error('Sign in error:', error);
+      console.error('AuthContext - Erro no login:', error);
       throw error;
     }
   };
 
-  const signUp = async (email: string, password: string, name: string) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    name: string,
+    teamId?: string | null
+  ) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      const rolesCollection = await getDoc(doc(db, 'roles', 'cliente-padrao'));
+      let roleId = '';
+      let roleKey = 'client';
+      let roleName = 'Cliente';
+      
+      if (rolesCollection.exists()) {
+        const roleData = rolesCollection.data();
+        roleId = rolesCollection.id;
+        roleKey = roleData.key;
+        roleName = roleData.name;
+      }
       
       const userData = {
         email,
         name,
-        role: 'client',
+        roleId: roleId,
+        roleKey: roleKey,
+        roleName: roleName,
+        team: teamId || null, // Vincular à equipe se fornecido
         createdAt: serverTimestamp(),
       };
 
@@ -132,6 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const user = {
         id: userCredential.user.uid,
         ...userData,
+        team: teamId || null, // Garantir que o campo team esteja no objeto do usuário
         createdAt: new Date(),
       } as User;
       
@@ -159,7 +308,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Usuário não autenticado');
       }
 
-      // Reautenticar o usuário antes de alterar a senha
       const credential = EmailAuthProvider.credential(
         currentUser.email,
         currentPassword
@@ -167,7 +315,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       await reauthenticateWithCredential(currentUser, credential);
       
-      // Atualizar a senha
       await updatePassword(currentUser, newPassword);
     } catch (error) {
       console.error('Erro ao atualizar senha:', error);
@@ -181,11 +328,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Usuário não autenticado');
       }
 
-      // Atualizar no Firestore
       const userRef = doc(db, 'users', user.id);
       await updateDoc(userRef, userData);
 
-      // Atualizar o estado local
       setUser(prev => {
         if (!prev) return null;
         return { ...prev, ...userData };

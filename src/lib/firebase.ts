@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: "AIzaSyApoamPAVUfhPvEUaAa8OgHwUh1MX6syzE",
@@ -17,6 +18,13 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const functions = getFunctions(app, 'us-central1');
 
-// Configurar CORS headers para o Storage
-storage.customDomain = window.location.origin;
+// Conectar ao emulador de funções se estiver em ambiente de desenvolvimento
+if (process.env.NODE_ENV === 'development') {
+  // Descomentar a linha abaixo para usar o emulador local de funções
+  // connectFunctionsEmulator(functions, 'localhost', 5001);
+}
+
+// Configurar URL base para o Storage
+// Removida a linha com customDomain que estava causando erro de tipo

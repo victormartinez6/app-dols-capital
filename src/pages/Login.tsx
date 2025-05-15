@@ -25,7 +25,7 @@ export default function Login() {
   const [forgotPassword, setForgotPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const { register, handleSubmit, formState: { errors }, setFocus } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors }, setFocus, setValue } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
@@ -44,6 +44,7 @@ export default function Login() {
       }
       
       if (isRegistering && data.name) {
+        // Criar o usuário
         await signUp(data.email, data.password, data.name);
       } else {
         await signIn(data.email, data.password);
@@ -80,7 +81,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative font-['Montserrat'] overflow-hidden">
+    <div className="fixed inset-0 flex items-center justify-center font-['Montserrat'] overflow-hidden">
       {/* Background image with blur */}
       <div 
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat" 
@@ -97,78 +98,94 @@ export default function Login() {
       <div className="absolute inset-0 bg-black bg-opacity-50 z-10"></div>
       
       {/* Content */}
-      <div className="max-w-md w-full space-y-8 p-8 bg-black bg-opacity-70 rounded-xl shadow-2xl backdrop-blur-sm z-20 m-4">
+      <div className="max-w-md w-full space-y-6 p-6 sm:p-8 bg-black bg-opacity-70 rounded-xl shadow-2xl backdrop-blur-sm z-20 m-4 overflow-y-auto max-h-[90vh] md:overflow-visible md:max-h-none">
         <div className="flex flex-col items-center">
-          <Logo className="h-32 w-auto" variant="white" />
+          <Logo className="h-16 w-auto mb-4" variant="white" />
+          <h2 className="text-center text-2xl font-extrabold text-white">
+            {forgotPassword ? 'Recuperar Senha' : isRegistering ? 'Crie sua conta' : 'Entre na sua conta'}
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-400">
+            {forgotPassword 
+              ? 'Informe seu e-mail para receber instruções de recuperação de senha' 
+              : isRegistering 
+                ? 'Preencha os dados abaixo para criar sua conta'
+                : 'Acesse a plataforma Dols Capital'
+            }
+          </p>
         </div>
         
         {error && (
-          <div className="bg-red-600 text-white p-3 rounded-md text-sm font-medium shadow-lg">
+          <div className="bg-red-900/50 border border-red-500 text-white px-4 py-3 rounded-md text-sm">
             {error}
           </div>
         )}
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
-          <div className="rounded-md shadow-sm space-y-4">
+          <div className="space-y-4">
             {isRegistering && (
               <div>
-                <label htmlFor="name" className="text-white text-sm mb-1 block font-medium">Nome completo</label>
+                <label htmlFor="name" className="block text-sm font-medium text-white mb-1">
+                  Nome Completo
+                </label>
                 <div className="relative">
-                  <input
-                    {...register('name')}
-                    type="text"
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
-                    placeholder="Nome completo"
-                    disabled={isLoading}
-                  />
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center z-20">
-                    <UserPlus className="h-5 w-5 text-gray-400" />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <UserCircle className="h-5 w-5 text-gray-500" />
                   </div>
+                  <input
+                    id="name"
+                    type="text"
+                    {...register('name')}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-700 rounded-md bg-black bg-opacity-70 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#D8B25A] focus:border-transparent"
+                    placeholder="Seu nome completo"
+                  />
                 </div>
                 {errors.name && (
-                  <p className="mt-1 text-sm text-red-400">{errors.name.message}</p>
+                  <p className="mt-1 text-sm text-red-500">{errors.name.message}</p>
                 )}
               </div>
             )}
             
             <div>
-              <label htmlFor="email" className="text-white text-sm mb-1 block font-medium">E-mail</label>
+              <label htmlFor="email" className="block text-sm font-medium text-white mb-1">
+                E-mail
+              </label>
               <div className="relative">
-                <input
-                  {...register('email')}
-                  type="email"
-                  className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
-                  placeholder="Seu e-mail"
-                  disabled={isLoading}
-                />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center z-20">
-                  <Mail className="h-5 w-5 text-gray-400" />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-gray-500" />
                 </div>
+                <input
+                  id="email"
+                  type="email"
+                  {...register('email')}
+                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-700 rounded-md bg-black bg-opacity-70 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#D8B25A] focus:border-transparent"
+                  placeholder="seu@email.com"
+                />
               </div>
               {errors.email && (
-                <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
+                <p className="mt-1 text-sm text-red-500">{errors.email.message}</p>
               )}
             </div>
             
-            {!forgotPassword && (
-              <div>
-                <label htmlFor="password" className="text-white text-sm mb-1 block font-medium">Senha</label>
-                <div className="relative">
-                  <input
-                    {...register('password')}
-                    type={showPassword ? "text" : "password"}
-                    className="appearance-none rounded-md relative block w-full px-3 py-2 pl-10 pr-10 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
-                    placeholder="Sua senha"
-                    disabled={isLoading}
-                  />
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center z-20">
-                    <Lock className="h-5 w-5 text-gray-400" />
-                  </div>
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-white mb-1">
+                Senha
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-500" />
+                </div>
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  {...register('password')}
+                  className="block w-full pl-10 pr-10 py-2.5 border border-gray-700 rounded-md bg-black bg-opacity-70 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#D8B25A] focus:border-transparent"
+                  placeholder="Sua senha"
+                />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                   <button
                     type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white z-20"
                     onClick={() => setShowPassword(!showPassword)}
-                    disabled={isLoading}
+                    className="text-gray-500 hover:text-gray-400 focus:outline-none"
                   >
                     {showPassword ? (
                       <EyeOff className="h-5 w-5" />
@@ -177,33 +194,45 @@ export default function Login() {
                     )}
                   </button>
                 </div>
-                {errors.password && (
-                  <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
-                )}
+              </div>
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-500">{errors.password.message}</p>
+              )}
+            </div>
+            
+            {!isRegistering && !forgotPassword && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <input
+                    id="remember-me"
+                    name="remember-me"
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-[#D8B25A] focus:ring-[#D8B25A] bg-black"
+                  />
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-400">
+                    Lembrar-me
+                  </label>
+                </div>
+
+                <div className="text-sm">
+                  <button
+                    type="button"
+                    onClick={toggleForgotPassword}
+                    className="font-medium text-[#D8B25A] hover:text-[#E6C36A] focus:outline-none"
+                  >
+                    Esqueceu a senha?
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {!forgotPassword && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={toggleForgotPassword}
-                className="text-[#D8B25A] hover:text-[#FFEEA8] text-sm font-medium flex items-center"
-                disabled={isLoading}
-              >
-                <KeyRound className="h-4 w-4 mr-1" />
-                Esqueci minha senha
-              </button>
-            </div>
-          )}
-
-          <div className="flex flex-col space-y-4">
+          <div className="space-y-3">
             <button
               type="submit"
-              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md ${
-                isLoading ? 'bg-gray-300 text-gray-600' : 'text-black bg-white hover:bg-gray-100'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A] shadow-md transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02]`}
+              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-[#D8B25A] to-[#A88D45] ${
+                isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:from-[#E6C36A] hover:to-[#B99B53]'
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#D8B25A] transition-all duration-300 hover:shadow-[0_0_15px_rgba(216,178,90,0.6)] hover:-translate-y-1 hover:scale-[1.02]`}
               disabled={isLoading}
             >
               {isLoading ? (

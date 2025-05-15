@@ -1,12 +1,27 @@
-export type UserRole = 'client' | 'manager' | 'admin';
+export type UserRole = 'client' | 'manager' | 'admin' | 'partner';
 
 export interface User {
   id: string;
   email: string;
-  role: UserRole;
   name: string;
   createdAt: Date;
   registrationType?: 'PF' | 'PJ';
+  team?: string; // ID da equipe a que o usuário pertence
+  roleId: string; // ID do perfil no Firestore
+  roleKey: string; // Chave do perfil (ex: 'admin', 'manager', 'client')
+  roleName: string; // Nome do perfil para exibição
+}
+
+// Interface para equipes
+export interface Team {
+  id: string;
+  name: string;
+  managerId: string; // ID do gerente responsável pela equipe
+  members: string[]; // IDs dos membros da equipe
+  teamCode?: string; // Código de 4 dígitos para vinculação de clientes
+  createdAt: Date;
+  managerName?: string; // Nome do gerente (usado apenas para exibição)
+  membersCount?: number; // Contagem de membros (usado apenas para exibição)
 }
 
 export interface Address {

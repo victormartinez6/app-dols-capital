@@ -1,13 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
-// Configuração de CORS para as funções
-const corsConfig = {
-  origin: true, // Permite qualquer origem, incluindo localhost
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-};
-
 // Função para excluir um usuário do Firebase Authentication
 export const deleteAuthUser = functions
   .region('us-central1')
@@ -22,7 +15,7 @@ export const deleteAuthUser = functions
 
     // Verificar se o usuário é um administrador (você deve implementar essa verificação)
     const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-    if (!userDoc.exists || userDoc.data()?.role !== 'admin') {
+    if (!userDoc.exists || userDoc.data()?.roleKey !== 'admin') {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Apenas administradores podem excluir usuários.'
@@ -64,7 +57,7 @@ export const disableAuthUser = functions
 
     // Verificar se o usuário é um administrador
     const userDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
-    if (!userDoc.exists || userDoc.data()?.role !== 'admin') {
+    if (!userDoc.exists || userDoc.data()?.roleKey !== 'admin') {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Apenas administradores podem bloquear/desbloquear usuários.'

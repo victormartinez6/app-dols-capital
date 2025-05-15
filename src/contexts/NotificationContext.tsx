@@ -34,7 +34,15 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const unreadCount = notifications.filter(notification => !notification.read).length;
 
   useEffect(() => {
-    if (!user || user.role === 'client') {
+    if (!user) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+
+    // Verificar se o usuário tem roleKey definido
+    if (!user.roleKey) {
+      console.warn('Usuário sem roleKey definido, pulando busca de notificações');
       setNotifications([]);
       setLoading(false);
       return;
@@ -43,45 +51,51 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // Apenas administradores e gerentes recebem notificações de novos cadastros
     setLoading(true);
 
-    // Consulta simplificada para evitar a necessidade de índices compostos
-    const q = query(
-      collection(db, 'notifications'),
-      where('recipientRoles', 'array-contains', user.role)
-    );
+    try {
+      // Consulta simplificada para evitar a necessidade de índices compostos
+      const q = query(
+        collection(db, 'notifications'),
+        where('recipientRoles', 'array-contains', user.roleKey)
+      );
 
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const notificationsList: Notification[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        notificationsList.push({
-          id: doc.id,
-          type: data.type,
-          title: data.title,
-          message: data.message,
-          read: data.read || false,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          targetId: data.targetId,
-          targetType: data.targetType,
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const notificationsList: Notification[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          notificationsList.push({
+            id: doc.id,
+            type: data.type,
+            title: data.title,
+            message: data.message,
+            read: data.read || false,
+            createdAt: data.createdAt?.toDate() || new Date(),
+            targetId: data.targetId,
+            targetType: data.targetType,
+          });
         });
+        
+        // Ordenar localmente por data (mais recentes primeiro)
+        notificationsList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        
+        // Remover notificações duplicadas (mesmo cliente)
+        const uniqueNotifications = removeDuplicateClientNotifications(notificationsList);
+        
+        // Limitar a quantidade de notificações exibidas
+        const limitedNotifications = uniqueNotifications.slice(0, 50);
+        
+        setNotifications(limitedNotifications);
+        setLoading(false);
+      }, (error) => {
+        console.error("Erro ao buscar notificações:", error);
+        setLoading(false);
       });
-      
-      // Ordenar localmente por data (mais recentes primeiro)
-      notificationsList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      
-      // Remover notificações duplicadas (mesmo cliente)
-      const uniqueNotifications = removeDuplicateClientNotifications(notificationsList);
-      
-      // Limitar a quantidade de notificações exibidas
-      const limitedNotifications = uniqueNotifications.slice(0, 50);
-      
-      setNotifications(limitedNotifications);
-      setLoading(false);
-    }, (error) => {
-      console.error("Erro ao buscar notificações:", error);
-      setLoading(false);
-    });
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Erro ao configurar listener de notificações:", error);
+      setLoading(false);
+      return () => {}; // Retornar uma função de limpeza vazia
+    }
   }, [user]);
 
   // Função para remover notificações duplicadas do mesmo cliente

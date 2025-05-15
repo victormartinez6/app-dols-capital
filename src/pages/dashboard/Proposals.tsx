@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { collection, query, getDocs, doc, deleteDoc, where, updateDoc, getDoc, addDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Eye, Pencil, Trash2, Search, X, Calendar, CheckCircle, XCircle, Clock, AlertTriangle, Plus, User, MessageSquarePlus, Copy } from 'lucide-react';
+import { Eye, Pencil, Trash2, Search, X, Calendar, CheckCircle, XCircle, Clock, AlertTriangle, Plus, User, Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useRolePermissions } from '../../hooks/useRolePermissions';
+import { Team } from '../../types';
 
 interface Proposal {
   id: string;
@@ -85,6 +87,8 @@ export default function Proposals() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'in_analysis' | 'with_pendencies'>('all');
   const [pipelineStatusFilter, setPipelineStatusFilter] = useState<'all' | 'submitted' | 'pre_analysis' | 'credit' | 'legal' | 'contract'>('all');
   const [dateFilter, setDateFilter] = useState('');
+  const [teamFilter, setTeamFilter] = useState<string>('');
+  const [teams, setTeams] = useState<Team[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [proposalToDelete, setProposalToDelete] = useState<string | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -96,52 +100,626 @@ export default function Proposals() {
   const [duplicatingProposal, setDuplicatingProposal] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [proposalToDuplicate, setProposalToDuplicate] = useState<string | null>(null);
-  const [proposalToDuplicateNumber, setProposalToDuplicateNumber] = useState<string | null>(null);
-  const [clients, setClients] = useState<{ id: string; name: string; type: 'PF' | 'PJ' }[]>([]);
-  const [clientSearchTerm, setClientSearchTerm] = useState('');
-  const [filteredClients, setFilteredClients] = useState<{ id: string; name: string; type: 'PF' | 'PJ' }[]>([]);
-  const [selectedClient, setSelectedClient] = useState<{ id: string; name: string; type: 'PF' | 'PJ' } | null>(null);
-  const [banks, setBanks] = useState<{ id: string; companyName: string; tradingName: string; commission: string }[]>([]);
-  
-  // Estado para controlar se o acordeon de filtros está aberto ou fechado
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
-  // Estado para o modal de pendências
+  const [clients, setClients] = useState<any[]>([]);
+  const [filteredClients, setFilteredClients] = useState<any[]>([]);
+  const [clientSearchText, setClientSearchText] = useState('');
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [showPendencyModal, setShowPendencyModal] = useState(false);
   const [pendencyText, setPendencyText] = useState('');
+  const [proposalForPendency, setProposalForPendency] = useState<string | null>(null);
+  
+  // Estado para armazenar os bancos parceiros
+  const [banks, setBanks] = useState<any[]>([]);
 
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const { 
+    canViewPage,
+    canPerformAction,
+    getDataScope
+  } = useRolePermissions();
+  
+  // Armazenar os resultados das funções do hook useRolePermissions em variáveis
+  const canViewProposals = canViewPage('proposals');
+  const canCreateProposals = canPerformAction('proposals', 'create');
+  const canEditProposals = canPerformAction('proposals', 'edit');
+  const canDeleteProposals = canPerformAction('proposals', 'delete');
+  const proposalsScope = getDataScope('proposals');
+  const clientsScope = getDataScope('clients');
+  
+  // Log para verificar as permissões do parceiro
+  console.log('==== PERMISSÕES DO USUÁRIO ====');
+  console.log('canViewProposals:', canViewProposals);
+  console.log('proposalsScope:', proposalsScope);
+  console.log('==============================');
 
   useEffect(() => {
-    fetchBanks();
-  }, [user]);
+    console.log('[Ciclo de Vida] Verificando proposalsScope:', proposalsScope);
+    if (!proposalsScope) {
+      console.log('[Ciclo de Vida] Redirecionando para unauthorized - proposalsScope não definido');
+      navigate('/unauthorized');
+    } else {
+      console.log('[Ciclo de Vida] proposalsScope definido:', proposalsScope);
+    }
+  }, [proposalsScope, navigate]);
 
   useEffect(() => {
+    console.log('[Ciclo de Vida] useEffect de carregamento de dados - proposalsScope:', proposalsScope);
+    
+    // Forçar carregamento para parceiros, independentemente das permissões
+    if (user?.roleKey === 'partner') {
+      console.log('[SOLUCAO EMERGENCIAL] Forçando carregamento para parceiro, ignorando proposalsScope');
+      fetchProposals();
+      fetchTeams();
+      fetchBanks();
+      return;
+    }
+    
+    // Fluxo normal para outros usuários
+    if (!proposalsScope) {
+      console.log('[Ciclo de Vida] Ignorando carregamento - proposalsScope não definido');
+      return;
+    }
+    console.log('[Ciclo de Vida] Iniciando carregamento de dados...');
     fetchProposals();
-  }, [user, banks]);
+    fetchTeams();
+    fetchBanks();
+  }, [proposalsScope, user?.roleKey]);
 
   useEffect(() => {
     applyFilters();
-  }, [proposals, clientNameFilter, statusFilter, pipelineStatusFilter, dateFilter]);
+  }, [proposals, clientNameFilter, statusFilter, pipelineStatusFilter, dateFilter, teamFilter]);
 
-  useEffect(() => {
-    if (showNewProposalModal) {
-      fetchClients();
+  const fetchTeams = async () => {
+    try {
+      const teamsCollection = collection(db, 'teams');
+      const teamsSnapshot = await getDocs(teamsCollection);
+
+      const teamsData = teamsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Team[];
+
+      setTeams(teamsData);
+    } catch (err) {
+      console.error('Erro ao buscar equipes:', err);
     }
-  }, [showNewProposalModal]);
+  };
 
-  useEffect(() => {
-    if (clientSearchTerm.trim() === '') {
-      setFilteredClients(clients);
-    } else {
-      const filtered = clients.filter(client => 
-        client.name.toLowerCase().includes(clientSearchTerm.toLowerCase())
+  const fetchProposals = async () => {
+    try {
+      console.log('INICIANDO fetchProposals');
+      setLoading(true);
+      
+      // Adicionar logs detalhados para debug
+      console.log('=== DIAGNÓSTICO DE PROPOSTAS ===');
+      console.log('Usuário atual:', user);
+      console.log('Role do usuário:', user?.roleKey);
+      console.log('Permissão para ver propostas:', canViewProposals);
+      console.log('Escopo de propostas:', proposalsScope);
+      console.log('==============================');
+      
+      // Verificar se o usuário está autenticado
+      if (!user || !user.email) {
+        console.error('Usuário não autenticado ou sem email');
+        setLoading(false);
+        return;
+      }
+      
+      // SOLUCAO EMERGENCIAL: Tratar parceiros, clientes e gerentes de forma especial, independente das permissões
+      if (user.roleKey === 'partner' || user.roleKey === 'client' || user.roleKey === 'manager') {
+        console.log(`TRATAMENTO ESPECIAL PARA ${user.roleKey.toUpperCase()}`);
+        console.log('ID do usuário:', user.id);
+        console.log('Email do usuário:', user.email);
+        
+        // Se for parceiro, buscar primeiro os clientes onde ele é o inviterUserId
+        let clientIdsFromInviter = [];
+        if (user.roleKey === 'partner') {
+          console.log('Buscando clientes onde o parceiro é o inviterUserId...');
+          try {
+            const clientsQuery = query(collection(db, 'registrations'), where('inviterUserId', '==', user.id));
+            const clientsSnapshot = await getDocs(clientsQuery);
+            console.log(`Encontrados ${clientsSnapshot.size} clientes onde o parceiro é o inviterUserId`);
+            
+            // Extrair IDs dos clientes
+            clientIdsFromInviter = clientsSnapshot.docs.map(doc => doc.id);
+            console.log('IDs dos clientes encontrados:', clientIdsFromInviter);
+          } catch (err) {
+            console.error('Erro ao buscar clientes do parceiro:', err);
+          }
+        }
+        
+        // Buscar TODAS as propostas
+        console.log('Buscando todas as propostas para filtrar manualmente...');
+        const allProposalsRef = collection(db, 'proposals');
+        const allProposalsSnapshot = await getDocs(allProposalsRef);
+        console.log(`Total de propostas no banco: ${allProposalsSnapshot.size}`);
+        
+        // Mostrar todas as propostas encontradas para debug
+        console.log('=== TODAS AS PROPOSTAS ENCONTRADAS ===');
+        allProposalsSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          console.log(`Proposta ID: ${doc.id}`);
+          console.log(`- userId: ${data.userId || 'N/A'}`);
+          console.log(`- createdBy: ${data.createdBy || 'N/A'}`);
+          console.log(`- partnerEmail: ${data.partnerEmail || 'N/A'}`);
+          console.log(`- inviterUserId: ${data.inviterUserId || 'N/A'}`);
+          console.log(`- clientId: ${data.clientId || 'N/A'}`);
+          console.log(`- clientName: ${data.clientName || 'N/A'}`);
+        });
+        console.log('===================================');
+        
+        // Filtrar propostas do usuário (parceiro, cliente ou gerente)
+        const userProposals = [];
+        
+        // Se for gerente, buscar primeiro os usuários da equipe
+        let teamUserIds = [];
+        let teamUserEmails = [];
+        let teamData = null;
+        
+        if (user.roleKey === 'manager' && user.team) {
+          console.log(`Buscando usuários da equipe do gerente: ${user.team}`);
+          const usersCollection = collection(db, 'users');
+          // Verificar se o campo no banco de dados é 'team' ou 'teamId'
+          const teamField = 'team'; // Ajuste conforme a estrutura do seu banco de dados
+          const teamUsersQuery = query(usersCollection, where(teamField, '==', user.team));
+          const teamUsersSnapshot = await getDocs(teamUsersQuery);
+          
+          // Buscar informações da equipe
+          try {
+            const teamDoc = await getDoc(doc(db, 'teams', user.team));
+            if (teamDoc.exists()) {
+              teamData = teamDoc.data();
+              console.log('Dados da equipe encontrados:', teamData);
+            }
+          } catch (error) {
+            console.error('Erro ao buscar dados da equipe:', error);
+          }
+          
+          teamUserIds = teamUsersSnapshot.docs.map(doc => doc.id);
+          teamUserEmails = teamUsersSnapshot.docs.map(doc => doc.data().email).filter(Boolean);
+          
+          console.log(`Usuários encontrados na equipe: ${teamUserIds.length}`);
+          console.log('IDs dos usuários da equipe:', teamUserIds);
+          console.log('Emails dos usuários da equipe:', teamUserEmails);
+        }
+        
+        allProposalsSnapshot.forEach(doc => {
+          const data = doc.data();
+          console.log('Estrutura completa da proposta:', doc.id, data);
+          let isMatch = false;
+          
+          // Verificar se a proposta pertence ao usuário
+          if (user.roleKey === 'partner') {
+            // Critérios para parceiros
+            // Parceiro ve tudo que ele criar e todos os que forem como ele "inviterUserId"
+            console.log('Verificando proposta:', doc.id);
+            console.log('- userId na proposta:', data.userId);
+            console.log('- createdBy na proposta:', data.createdBy);
+            console.log('- partnerEmail na proposta:', data.partnerEmail);
+            console.log('- inviterUserId na proposta:', data.inviterUserId);
+            console.log('- clientId na proposta:', data.clientId);
+            console.log('- ID do parceiro:', user.id);
+            console.log('- Email do parceiro:', user.email);
+            
+            // Verificar se o clientId da proposta está na lista de clientes do parceiro
+            const isClientFromPartner = clientIdsFromInviter.includes(data.clientId);
+            console.log('Cliente é do parceiro?', isClientFromPartner);
+            
+            isMatch = data.userId === user.id || 
+                     data.createdBy === user.email || 
+                     data.partnerEmail === user.email ||
+                     data.inviterUserId === user.id || // Adicionado para atender ao requisito
+                     isClientFromPartner; // Adicionado para incluir propostas de clientes do parceiro
+                     
+            console.log('Proposta corresponde aos critérios?', isMatch);
+          } else if (user.roleKey === 'client') {
+            // Critérios para clientes
+            isMatch = data.userId === user.id || 
+                     data.createdBy === user.email || 
+                     data.clientId === user.id || 
+                     data.clientEmail === user.email;
+          } else if (user.roleKey === 'manager') {
+            // Critérios para gerentes - propostas dele, propostas onde ele é o inviterUserId,
+            // ou propostas vinculadas à equipe dele
+            isMatch = data.userId === user.id || 
+                     data.createdBy === user.email || 
+                     data.inviterUserId === user.id || 
+                     teamUserIds.includes(data.userId) || 
+                     teamUserEmails.includes(data.createdBy) || 
+                     teamUserEmails.includes(data.partnerEmail) || 
+                     teamUserEmails.includes(data.clientEmail) ||
+                     data.teamName === teamData?.name ||
+                     data.teamId === user.team;
+          }
+          
+          if (isMatch) {
+            console.log(`Proposta encontrada para ${user.roleKey}: ${doc.id}`);
+            userProposals.push({
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt?.toDate() || new Date(),
+              observationsTimeline: data.observationsTimeline || [],
+              pendencies: data.pendencies || [],
+              lastPendency: data.pendencies && data.pendencies.length > 0
+                ? data.pendencies[data.pendencies.length - 1]
+                : null
+            });
+          }
+        });
+        
+        console.log(`Propostas filtradas para o ${user.roleKey}: ${userProposals.length}`);
+        console.log('Propostas encontradas:', userProposals);
+        
+        setProposals(userProposals);
+        setFilteredProposals(userProposals);
+        setLoading(false);
+        return;
+      }
+      
+      // Fluxo normal para outros usuários
+      if (canViewProposals) {
+        let proposalsQuery;
+
+        if (proposalsScope === 'all') {
+          // Administrador vê todas as propostas
+          proposalsQuery = query(collection(db, 'proposals'));
+        } else if (proposalsScope === 'team' && user?.teamId) {
+          // Gerente vê propostas da sua equipe
+          // Primeiro, buscar os usuários da equipe
+          const usersCollection = collection(db, 'users');
+          // Verificar se o campo no banco de dados é 'team' ou 'teamId'
+          const teamField = 'team'; // Ajuste conforme a estrutura do seu banco de dados
+          const teamUsersQuery = query(usersCollection, where(teamField, '==', user.teamId));
+          const teamUsersSnapshot = await getDocs(teamUsersQuery);
+          const teamUserIds = teamUsersSnapshot.docs.map(doc => doc.id);
+
+          // Depois, buscar as propostas desses usuários
+          proposalsQuery = query(collection(db, 'proposals'), where('userId', 'in', teamUserIds));
+        } else {
+          // Cliente vê apenas suas próprias propostas
+          console.log('Buscando apenas propostas próprias (cliente/parceiro)');
+          
+          // ABORDAGEM SIMPLIFICADA PARA PARCEIROS
+          if (user?.roleKey === 'partner' && user?.email) {
+            console.log('=== ABORDAGEM SIMPLIFICADA PARA PARCEIROS ===');
+            console.log(`Parceiro: ${user.email}, ID: ${user.id}`);
+            
+            // Buscar TODAS as propostas primeiro
+            const allProposalsQuery = query(collection(db, 'proposals'));
+            const allProposalsSnapshot = await getDocs(allProposalsQuery);
+            console.log(`Total de propostas no sistema: ${allProposalsSnapshot.docs.length}`);
+            
+            // Filtrar manualmente as propostas que pertencem ao parceiro
+            const partnerProposals = allProposalsSnapshot.docs.filter(doc => {
+              const data = doc.data();
+              const matchesUserId = data.userId === user.id;
+              const matchesCreatedBy = data.createdBy === user.email;
+              const matchesPartnerEmail = data.partnerEmail === user.email;
+              
+              return matchesUserId || matchesCreatedBy || matchesPartnerEmail;
+            });
+            
+            console.log(`Propostas filtradas para o parceiro: ${partnerProposals.length}`);
+            
+            // Logar cada proposta encontrada
+            partnerProposals.forEach((doc, index) => {
+              const data = doc.data();
+              console.log(`Proposta ${index + 1}:`, {
+                id: doc.id,
+                proposalNumber: data.proposalNumber || 'Sem número',
+                clientName: data.clientName || 'Sem nome',
+                createdBy: data.createdBy || 'N/A',
+                userId: data.userId || 'N/A',
+                partnerEmail: data.partnerEmail || 'N/A'
+              });
+            });
+            
+            // Processar as propostas encontradas
+            const proposalsData = await Promise.all(
+              partnerProposals.map(async (doc) => {
+                const data = doc.data();
+                
+                // Processar dados da proposta
+                return {
+                  id: doc.id,
+                  proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
+                  clientName: data.clientName || 'Nome não disponível',
+                  clientId: data.clientId || '',
+                  desiredCredit: data.desiredCredit || 0,
+                  hasProperty: data.hasProperty || false,
+                  propertyValue: data.propertyValue || 0,
+                  status: data.status || 'pending',
+                  pipelineStatus: data.pipelineStatus || 'submitted',
+                  createdAt: data.createdAt?.toDate() || new Date(),
+                  userId: data.userId || '',
+                  creditLine: data.creditLine || '',
+                  creditReason: data.creditReason || '',
+                  bankId: data.bankId || '',
+                  bankName: data.bankName || '',
+                  bankTradingName: data.bankTradingName || '',
+                  teamId: data.teamId || '',
+                  teamName: data.teamName || '',
+                  teamCode: data.teamCode || '',
+                  observationsTimeline: data.observationsTimeline || [],
+                  pendencies: data.pendencies || [],
+                  lastPendency: data.pendencies && data.pendencies.length > 0
+                    ? data.pendencies[data.pendencies.length - 1]
+                    : null
+                } as Proposal;
+              })
+            );
+            
+            console.log(`Processamento concluído. Total de propostas processadas: ${proposalsData.length}`);
+            console.log('Atualizando estado com as propostas processadas...');
+            
+            setProposals(proposalsData);
+            setFilteredProposals(proposalsData);
+            console.log('Estado atualizado com sucesso!');
+            setLoading(false);
+            return;
+          } else {
+            // Usar uma consulta composta para verificar tanto userId quanto clientId
+            console.log(`Buscando propostas para usuário regular: ${user?.id}`);
+            
+            // Consulta principal por userId
+            const userIdQuery = query(collection(db, 'proposals'), where('userId', '==', user.id));
+            
+            // Consulta alternativa por createdBy (email)
+            const createdByQuery = query(collection(db, 'proposals'), where('createdBy', '==', user.email));
+            
+            // Consulta para clientes
+            const clientIdQuery = query(collection(db, 'proposals'), where('clientId', '==', user.id));
+            
+            // Executar todas as consultas e combinar os resultados
+            const userIdSnapshot = await getDocs(userIdQuery);
+            const createdBySnapshot = await getDocs(createdByQuery);
+            const clientIdSnapshot = await getDocs(clientIdQuery);
+            
+            // Combinar os resultados (removendo duplicatas)
+            const proposalDocs = [...userIdSnapshot.docs];
+            
+            // Adicionar documentos da consulta createdBy
+            createdBySnapshot.docs.forEach(doc => {
+              if (!proposalDocs.some(existingDoc => existingDoc.id === doc.id)) {
+                proposalDocs.push(doc);
+              }
+            });
+            
+            // Adicionar documentos da consulta clientId
+            clientIdSnapshot.docs.forEach(doc => {
+              if (!proposalDocs.some(existingDoc => existingDoc.id === doc.id)) {
+                proposalDocs.push(doc);
+              }
+            });
+          }
+          
+          // Criar um snapshot personalizado com os documentos combinados
+          const proposalsSnapshot = {
+            docs: proposalDocs,
+            size: proposalDocs.length,
+            empty: proposalDocs.length === 0,
+            forEach: (callback: (doc: any) => void) => proposalDocs.forEach(callback)
+          };
+          
+          // Retornar imediatamente com os resultados combinados
+          const proposalsData = await Promise.all(
+            proposalsSnapshot.docs.map(async (docSnapshot) => {
+              const data = docSnapshot.data();
+
+              // Buscar informações do usuário para obter a equipe
+              let teamId = '';
+              let teamName = '';
+              let teamCode = '';
+
+              try {
+                // Verificar se a proposta já tem código e nome da equipe diretamente
+                if (data.teamCode && data.teamName) {
+                  teamCode = data.teamCode;
+                  teamName = data.teamName;
+                } else if (data && data.userId) {
+                  const userDoc = await getDoc(doc(db, 'users', data.userId));
+                  if (userDoc.exists() && userDoc.data().teamId) {
+                    teamId = userDoc.data().teamId;
+
+                    // Buscar nome da equipe
+                    const teamDoc = await getDoc(doc(db, 'teams', teamId));
+                    if (teamDoc.exists()) {
+                      teamName = teamDoc.data().name;
+                      teamCode = teamDoc.data().teamCode || '';
+                    }
+                  }
+                }
+
+                // Buscar informações do banco se bankId existir
+                let bankName = data.bankName || '';
+                let bankTradingName = data.bankTradingName || '';
+                
+                if (data && data.bankId) {
+                  const bankDoc = await getDoc(doc(db, 'banks', data.bankId));
+                  if (bankDoc.exists()) {
+                    const bankData = bankDoc.data();
+                    bankName = bankData.companyName || data.bankName || '';
+                    bankTradingName = bankData.tradingName || data.bankTradingName || '';
+                  }
+                }
+
+                return {
+                  id: docSnapshot.id,
+                  ...data,
+                  teamId,
+                  teamName,
+                  teamCode,
+                  bankName,
+                  bankTradingName,
+                  createdAt: data.createdAt,
+                  observationsTimeline: data.observationsTimeline || [],
+                  pendencies: data.pendencies || [],
+                  lastPendency: data.pendencies && data.pendencies.length > 0
+                    ? data.pendencies[data.pendencies.length - 0]
+                    : null
+                } as Proposal & { teamId: string; teamName: string; teamCode: string };
+              } catch (error) {
+                console.error('Erro ao processar proposta:', error);
+                return {
+                  id: docSnapshot.id,
+                  ...data,
+                  teamId: '',
+                  teamName: '',
+                  teamCode: '',
+                  createdAt: data.createdAt,
+                  observationsTimeline: data.observationsTimeline || [],
+                  pendencies: data.pendencies || []
+                } as Proposal & { teamId: string; teamName: string; teamCode: string };
+              }
+            })
+          );
+
+          setProposals(proposalsData);
+          setLoading(false);
+          return;
+        }
+
+        const proposalsSnapshot = await getDocs(proposalsQuery);
+
+        const proposalsData = await Promise.all(
+          proposalsSnapshot.docs.map(async (docSnapshot) => {
+            const data = docSnapshot.data();
+
+            // Buscar informações do usuário para obter a equipe
+            let teamId = '';
+            let teamName = '';
+            let teamCode = '';
+
+            try {
+              // Verificar se userId existe antes de tentar acessá-lo
+              if (data && data.userId) {
+                const userDoc = await getDoc(doc(db, 'users', data.userId));
+                if (userDoc.exists() && userDoc.data().teamId) {
+                  teamId = userDoc.data().teamId;
+
+                  // Buscar nome da equipe
+                  const teamDoc = await getDoc(doc(db, 'teams', teamId));
+                  if (teamDoc.exists()) {
+                    teamName = teamDoc.data().name;
+                    teamCode = teamDoc.data().teamCode || '';
+                  }
+                }
+              }
+
+              // Verificar se a proposta já tem código e nome da equipe diretamente
+              if (data.teamCode && data.teamName) {
+                teamCode = data.teamCode;
+                teamName = data.teamName;
+              }
+
+              // Buscar informações do banco se bankId existir
+              let bankName = data.bankName || '';
+              let bankTradingName = data.bankTradingName || '';
+              
+              if (data && data.bankId) {
+                const bankDoc = await getDoc(doc(db, 'banks', data.bankId));
+                if (bankDoc.exists()) {
+                  const bankData = bankDoc.data();
+                  bankName = bankData.companyName || data.bankName || '';
+                  bankTradingName = bankData.tradingName || data.bankTradingName || '';
+                }
+              }
+
+              return {
+                id: docSnapshot.id,
+                ...data,
+                teamId,
+                teamName,
+                teamCode,
+                bankName,
+                bankTradingName,
+                createdAt: data.createdAt,
+                observationsTimeline: data.observationsTimeline || [],
+                pendencies: data.pendencies || [],
+                lastPendency: data.pendencies && data.pendencies.length > 0
+                  ? data.pendencies[data.pendencies.length - 1]
+                  : null
+              } as Proposal & { teamId: string; teamName: string; teamCode: string };
+            } catch (err) {
+              console.error('Erro ao buscar equipe para usuário:', err);
+              return {
+                id: docSnapshot.id,
+                ...data,
+                teamId: '',
+                teamName: '',
+                teamCode: '',
+                bankName: data.bankName || '',
+                bankTradingName: data.bankTradingName || '',
+                createdAt: data.createdAt,
+                observationsTimeline: data.observationsTimeline || [],
+                pendencies: data.pendencies || [],
+                lastPendency: data.pendencies && data.pendencies.length > 0
+                  ? data.pendencies[data.pendencies.length - 1]
+                  : null
+              } as Proposal & { teamId: string; teamName: string; teamCode: string };
+            }
+          })
+        );
+
+        setProposals(proposalsData);
+        setFilteredProposals(proposalsData);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar propostas:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyFilters = () => {
+    let result = [...proposals];
+
+    // Filtro por nome do cliente
+    if (clientNameFilter) {
+      const searchTerm = clientNameFilter.toLowerCase();
+      result = result.filter(proposal =>
+        proposal.clientName.toLowerCase().includes(searchTerm)
       );
-      setFilteredClients(filtered);
     }
-  }, [clientSearchTerm, clients]);
+
+    // Filtro por status
+    if (statusFilter !== 'all') {
+      result = result.filter(proposal => proposal.status === statusFilter);
+    }
+
+    // Filtro por status do pipeline
+    if (pipelineStatusFilter !== 'all') {
+      result = result.filter(proposal => proposal.pipelineStatus === pipelineStatusFilter);
+    }
+
+    // Filtro por data
+    if (dateFilter) {
+      const filterDate = new Date(dateFilter);
+      result = result.filter(proposal => {
+        const proposalDate = proposal.createdAt instanceof Date
+          ? proposal.createdAt
+          : new Date(proposal.createdAt);
+        return proposalDate.toDateString() === filterDate.toDateString();
+      });
+    }
+
+    // Filtro por equipe
+    if (teamFilter) {
+      result = result.filter(proposal => (proposal as any).teamId === teamFilter);
+    }
+
+    setFilteredProposals(result);
+  };
+
+  const resetFilters = () => {
+    setClientNameFilter('');
+    setStatusFilter('all');
+    setPipelineStatusFilter('all');
+    setDateFilter('');
+    setTeamFilter('');
+  };
 
   const fetchBanks = async () => {
     try {
@@ -159,151 +737,257 @@ export default function Proposals() {
     }
   };
 
-  const fetchProposals = async () => {
-    try {
-      setLoading(true);
-      
-      // Buscar todos os bancos primeiro para ter os dados completos
-      const banksCollection = collection(db, 'banks');
-      const banksSnapshot = await getDocs(banksCollection);
-      const banksMap = new Map();
-      
-      banksSnapshot.docs.forEach(doc => {
-        const bankData = doc.data();
-        banksMap.set(doc.id, {
-          id: doc.id,
-          companyName: bankData.companyName || '',
-          tradingName: bankData.tradingName || bankData.companyName || '',
-          commission: bankData.commission || ''
-        });
-      });
-      
-      console.log('Bancos carregados:', banksMap.size);
-      
-      // Se o usuário for cliente, mostrar apenas suas propostas
-      if (user?.role === 'client') {
-        const q = query(collection(db, 'proposals'), where('userId', '==', user.id));
-        const querySnapshot = await getDocs(q);
-        const proposalsData = await Promise.all(querySnapshot.docs.map(async doc => {
-          const data = doc.data();
-          
-          // Buscar dados do banco se houver bankId
-          let bankName = data.bankName || '';
-          let bankTradingName = data.bankTradingName || '';
-          
-          if (data.bankId && banksMap.has(data.bankId)) {
-            const bankData = banksMap.get(data.bankId);
-            bankName = bankData.companyName;
-            bankTradingName = bankData.tradingName;
-          }
-          
-          return {
-            id: doc.id,
-            proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
-            clientName: data.clientName || 'Nome não disponível',
-            clientId: data.clientId || '',
-            desiredCredit: data.desiredCredit || 0,
-            hasProperty: data.hasProperty || false,
-            propertyValue: data.propertyValue || 0,
-            status: data.status || 'pending',
-            pipelineStatus: data.pipelineStatus || 'submitted',
-            createdAt: data.createdAt?.toDate() || new Date(),
-            userId: data.userId || '',
-            creditLine: data.creditLine || '',
-            creditReason: data.creditReason || '',
-            bankId: data.bankId || '',
-            bankName: bankName,
-            bankTradingName: bankTradingName,
-            observationsTimeline: data.observationsTimeline || [],
-            pendencies: data.pendencies || [],
-            lastPendency: data.lastPendency || null
-          };
-        })) as Proposal[];
-        setProposals(proposalsData);
-        setFilteredProposals(proposalsData);
-      } else {
-        // Se for gerente ou admin, mostrar todas as propostas
-        const q = query(collection(db, 'proposals'));
-        const querySnapshot = await getDocs(q);
-        const proposalsData = await Promise.all(querySnapshot.docs.map(async doc => {
-          const data = doc.data();
-          
-          // Buscar dados do banco se houver bankId
-          let bankName = data.bankName || '';
-          let bankTradingName = data.bankTradingName || '';
-          
-          if (data.bankId && banksMap.has(data.bankId)) {
-            const bankData = banksMap.get(data.bankId);
-            bankName = bankData.companyName;
-            bankTradingName = bankData.tradingName;
-          }
-          
-          return {
-            id: doc.id,
-            proposalNumber: data.proposalNumber || `PROP-${doc.id.substring(0, 6).toUpperCase()}`,
-            clientName: data.clientName || 'Nome não disponível',
-            clientId: data.clientId || '',
-            desiredCredit: data.desiredCredit || 0,
-            hasProperty: data.hasProperty || false,
-            propertyValue: data.propertyValue || 0,
-            status: data.status || 'pending',
-            pipelineStatus: data.pipelineStatus || 'submitted',
-            createdAt: data.createdAt?.toDate() || new Date(),
-            userId: data.userId || '',
-            creditLine: data.creditLine || '',
-            creditReason: data.creditReason || '',
-            bankId: data.bankId || '',
-            bankName: bankName,
-            bankTradingName: bankTradingName,
-            observationsTimeline: data.observationsTimeline || [],
-            pendencies: data.pendencies || [],
-            lastPendency: data.lastPendency || null
-          };
-        })) as Proposal[];
-        setProposals(proposalsData);
-        setFilteredProposals(proposalsData);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar propostas:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applyFilters = () => {
-    let result = [...proposals];
-    
-    // Filtro por nome do cliente
-    if (clientNameFilter) {
-      result = result.filter(prop => 
-        prop.clientName.toLowerCase().includes(clientNameFilter.toLowerCase())
-      );
-    }
-    
-    // Filtro por status
-    if (statusFilter !== 'all') {
-      result = result.filter(prop => prop.status === statusFilter);
-    }
-    
-    // Filtro por status do pipeline
-    if (pipelineStatusFilter !== 'all') {
-      result = result.filter(prop => prop.pipelineStatus === pipelineStatusFilter);
-    }
-    
-    // Filtro por data
-    if (dateFilter) {
-      const filterDate = new Date(dateFilter);
-      result = result.filter(prop => {
-        const propDate = new Date(prop.createdAt);
-        return propDate.toDateString() === filterDate.toDateString();
-      });
-    }
-    
-    setFilteredProposals(result);
-  };
-
   const toggleFilters = () => {
-    setFiltersOpen(!filtersOpen);
+    setShowFilters(!showFilters);
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  };
+
+  // Função para formatar datas de forma segura
+  const formatDate = (dateValue: any): string => {
+    if (!dateValue) return 'Data não disponível';
+    
+    try {
+      // Se já for uma instância de Date, use-a diretamente
+      if (dateValue instanceof Date) {
+        return format(dateValue, 'dd/MM/yyyy HH:mm', { locale: ptBR });
+      }
+      
+      // Se for um objeto do Firestore com método toDate()
+      if (dateValue && typeof dateValue === 'object' && 'toDate' in dateValue && typeof dateValue.toDate === 'function') {
+        return format(dateValue.toDate(), 'dd/MM/yyyy HH:mm', { locale: ptBR });
+      }
+      
+      // Se for uma string ISO ou timestamp
+      const date = new Date(dateValue);
+      if (!isNaN(date.getTime())) {
+        return format(date, 'dd/MM/yyyy HH:mm', { locale: ptBR });
+      }
+      
+      return 'Data inválida';
+    } catch (error) {
+      console.error('Erro ao formatar data:', error, dateValue);
+      return 'Erro na data';
+    }
+  };
+
+  const handleCreateNewProposal = () => {
+    setShowNewProposalModal(true);
+    setClientSearchText('');
+    setSelectedClient(null);
+  };
+
+  const handleSelectClient = (client: any) => {
+    setSelectedClient(client);
+  };
+
+  const handleConfirmNewProposal = () => {
+    if (selectedClient) {
+      setShowNewProposalModal(false);
+      navigate(`/proposals/new/${selectedClient.id}`);
+    }
+  };
+
+  const fetchClients = async () => {
+    try {
+      console.log('Iniciando busca de clientes...');
+      setFilteredClients([]); // Limpa a lista enquanto carrega
+      
+      let q;
+      
+      // Se for parceiro, buscar apenas clientes que ele criou ou onde ele é o inviterUserId
+      if (user?.roleKey === 'partner') {
+        console.log('Usuário é parceiro, buscando apenas clientes relacionados...');
+        q = query(collection(db, 'registrations'), 
+          where('inviterUserId', '==', user.id));
+      } else if (user?.roleKey === 'manager') {
+        // Para gerentes, buscar apenas clientes que ele criou ou onde ele é o inviterUserId
+        console.log('Usuário é gerente, buscando apenas clientes relacionados...');
+        q = query(collection(db, 'registrations'), 
+          where('inviterUserId', '==', user.id));
+      } else {
+        // Para outros usuários, buscar todos os clientes
+        q = query(collection(db, 'registrations'));
+      }
+      
+      const querySnapshot = await getDocs(q);
+      console.log(`Encontrados ${querySnapshot.docs.length} registros de clientes.`);
+      
+      // Buscar clientes adicionais com base no papel do usuário
+      let allDocs = [...querySnapshot.docs];
+      
+      if (user?.roleKey === 'partner' && user?.email) {
+        console.log('Buscando clientes criados pelo parceiro...');
+        const createdByQuery = query(collection(db, 'registrations'), 
+          where('createdBy', '==', user.email));
+        const createdBySnapshot = await getDocs(createdByQuery);
+        
+        // Adicionar documentos sem duplicatas
+        createdBySnapshot.docs.forEach(doc => {
+          if (!allDocs.some(existingDoc => existingDoc.id === doc.id)) {
+            allDocs.push(doc);
+          }
+        });
+        
+        console.log(`Total de clientes após incluir criados pelo parceiro: ${allDocs.length}`);
+      } else if (user?.roleKey === 'manager') {
+        // Para gerentes, buscar também clientes criados por ele
+        console.log('Buscando clientes criados pelo gerente...');
+        const createdByQuery = query(collection(db, 'registrations'), 
+          where('createdBy', '==', user.email));
+        const createdBySnapshot = await getDocs(createdByQuery);
+        
+        // Adicionar documentos sem duplicatas
+        createdBySnapshot.docs.forEach(doc => {
+          if (!allDocs.some(existingDoc => existingDoc.id === doc.id)) {
+            allDocs.push(doc);
+          }
+        });
+        
+        console.log(`Total de clientes após incluir criados pelo gerente: ${allDocs.length}`);
+        
+        // Se o gerente tem uma equipe, buscar clientes vinculados à equipe dele
+        if (user.team) {
+          try {
+            console.log(`Buscando informações da equipe do gerente: ${user.team}`);
+            const teamDoc = await getDoc(doc(db, 'teams', user.team));
+            
+            if (teamDoc.exists()) {
+              const teamData = teamDoc.data();
+              console.log('Dados da equipe encontrados:', teamData);
+              
+              // Buscar clientes vinculados à equipe pelo teamName
+              if (teamData.name) {
+                console.log(`Buscando clientes vinculados à equipe ${teamData.name}...`);
+                const teamClientsQuery = query(collection(db, 'registrations'), 
+                  where('teamName', '==', teamData.name));
+                const teamClientsSnapshot = await getDocs(teamClientsQuery);
+                
+                // Adicionar documentos sem duplicatas
+                teamClientsSnapshot.docs.forEach(doc => {
+                  if (!allDocs.some(existingDoc => existingDoc.id === doc.id)) {
+                    allDocs.push(doc);
+                  }
+                });
+              }
+              
+              // Buscar clientes vinculados à equipe pelo teamId
+              console.log(`Buscando clientes vinculados ao teamId ${user.team}...`);
+              const teamIdClientsQuery = query(collection(db, 'registrations'), 
+                where('teamId', '==', user.team));
+              const teamIdClientsSnapshot = await getDocs(teamIdClientsQuery);
+              
+              // Adicionar documentos sem duplicatas
+              teamIdClientsSnapshot.docs.forEach(doc => {
+                if (!allDocs.some(existingDoc => existingDoc.id === doc.id)) {
+                  allDocs.push(doc);
+                }
+              });
+              
+              // Buscar membros da equipe
+              const teamMembers = teamData.members || [];
+              if (teamMembers.length > 0) {
+                console.log(`Buscando clientes criados pelos membros da equipe...`);
+                
+                // Para cada membro da equipe, buscar clientes criados por ele
+                for (const memberId of teamMembers) {
+                  // Buscar informações do membro para obter o email
+                  const memberDoc = await getDoc(doc(db, 'users', memberId));
+                  if (memberDoc.exists()) {
+                    const memberEmail = memberDoc.data().email;
+                    if (memberEmail) {
+                      // Buscar clientes criados pelo membro
+                      const memberClientsQuery = query(collection(db, 'registrations'), 
+                        where('createdBy', '==', memberEmail));
+                      const memberClientsSnapshot = await getDocs(memberClientsQuery);
+                      
+                      // Adicionar documentos sem duplicatas
+                      memberClientsSnapshot.docs.forEach(doc => {
+                        if (!allDocs.some(existingDoc => existingDoc.id === doc.id)) {
+                          allDocs.push(doc);
+                        }
+                      });
+                    }
+                  }
+                }
+              }
+              
+              console.log(`Total de clientes após incluir da equipe: ${allDocs.length}`);
+            }
+          } catch (error) {
+            console.error('Erro ao buscar clientes da equipe do gerente:', error);
+          }
+        }
+      }
+      
+      const clientsData = allDocs.map(doc => {
+        const data = doc.data();
+        console.log('Dados do cliente:', doc.id, data);
+        
+        // Determinar o nome do cliente com base no tipo (PF ou PJ)
+        let clientName = 'Nome não disponível';
+        let clientType: 'PF' | 'PJ' = data.type || 'PF';
+        
+        if (clientType === 'PF') {
+          clientName = data.name || 'Cliente PF';
+        } else if (clientType === 'PJ') {
+          clientName = data.companyName || data.name || 'Cliente PJ';
+        }
+        
+        console.log(`Cliente processado: ${clientName} (${clientType}) - ID: ${doc.id}`);
+        
+        return {
+          id: doc.id,
+          name: clientName,
+          type: clientType,
+          inviterUserId: data.inviterUserId,
+          createdBy: data.createdBy
+        };
+      }).filter(client => client.name !== 'Nome não disponível');
+
+      console.log('Total de clientes válidos encontrados:', clientsData.length);
+      
+      // Ordenar por nome para facilitar a busca
+      const sortedClients = clientsData.sort((a, b) => a.name.localeCompare(b.name));
+      
+      setClients(sortedClients);
+      setFilteredClients(sortedClients);
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error);
+      // Mostrar lista vazia em caso de erro
+      setClients([]);
+      setFilteredClients([]);
+    }
+  };
+
+  useEffect(() => {
+    if (showNewProposalModal) {
+      fetchClients();
+    }
+  }, [showNewProposalModal]);
+
+  useEffect(() => {
+    if (clientSearchText) {
+      const filtered = clients.filter(client => 
+        client.name.toLowerCase().includes(clientSearchText.toLowerCase())
+      );
+      setFilteredClients(filtered);
+    } else {
+      setFilteredClients(clients);
+    }
+  }, [clientSearchText, clients]);
+
+  const handleViewProposal = (proposalId: string) => {
+    navigate(`/proposals/detail/${proposalId}`);
+  };
+
+  const handleEditProposal = (proposalId: string) => {
+    navigate(`/proposals/edit/${proposalId}`);
   };
 
   const handleDeleteProposal = async () => {
@@ -317,14 +1001,6 @@ export default function Proposals() {
     } catch (error) {
       console.error('Erro ao excluir proposta:', error);
     }
-  };
-
-  const handleViewProposal = (proposalId: string) => {
-    navigate(`/proposals/detail/${proposalId}`);
-  };
-
-  const handleEditProposal = (proposalId: string) => {
-    navigate(`/proposals/edit/${proposalId}`);
   };
 
   const updateProposalStatus = async (status: Proposal['status']) => {
@@ -354,9 +1030,17 @@ export default function Proposals() {
       // Atualizar também o status do cliente no Firestore, se necessário
       if (proposalToUpdate.clientId) {
         const clientRef = doc(db, 'registrations', proposalToUpdate.clientId);
+        let clientStatus = 'pending';
+        
+        // Determinar o status do cliente com base no status da proposta
+        if (status === 'with_pendencies') {
+          clientStatus = 'documents_pending';
+        } else if (status === 'approved') {
+          clientStatus = 'complete';
+        }
+        
         await updateDoc(clientRef, {
-          status: status === 'with_pendencies' ? 'documents_pending' : 
-                 status === 'approved' ? 'complete' : 'pending',
+          status: clientStatus,
           updatedAt: new Date(),
         });
       }
@@ -395,15 +1079,14 @@ export default function Proposals() {
     }
   };
 
-  // Função para lidar com o envio de pendências
   const handleSubmitPendency = async () => {
-    if (!proposalToChangeStatus || !pendencyText.trim()) return;
+    if (!proposalForPendency || !pendencyText.trim()) return;
 
     try {
       setLoading(true);
       
       // Encontrar a proposta que está sendo atualizada
-      const proposalToUpdate = proposals.find(p => p.id === proposalToChangeStatus);
+      const proposalToUpdate = proposals.find(p => p.id === proposalForPendency);
       
       if (!proposalToUpdate) return;
       
@@ -416,7 +1099,7 @@ export default function Proposals() {
       };
       
       // Atualizar a proposta no Firestore
-      const proposalRef = doc(db, 'proposals', proposalToChangeStatus);
+      const proposalRef = doc(db, 'proposals', proposalForPendency);
       await updateDoc(proposalRef, {
         status: 'with_pendencies',
         updatedAt: new Date(),
@@ -443,7 +1126,7 @@ export default function Proposals() {
       
       setProposals(prev => 
         prev.map(proposal => 
-          proposal.id === proposalToChangeStatus 
+          proposal.id === proposalForPendency 
             ? updatedProposal
             : proposal
         )
@@ -452,7 +1135,7 @@ export default function Proposals() {
       // Atualizar a lista filtrada
       setFilteredProposals(prev => 
         prev.map(proposal => 
-          proposal.id === proposalToChangeStatus 
+          proposal.id === proposalForPendency 
             ? updatedProposal
             : proposal
         )
@@ -461,61 +1144,11 @@ export default function Proposals() {
       // Limpar e fechar modais
       setPendencyText('');
       setShowPendencyModal(false);
-      setShowStatusModal(false);
-      setProposalToChangeStatus(null);
+      setProposalForPendency(null);
     } catch (error) {
       console.error('Erro ao adicionar pendência à proposta:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchClients = async () => {
-    try {
-      console.log('Iniciando busca de clientes...');
-      setFilteredClients([]); // Limpa a lista enquanto carrega
-      
-      // Buscar todos os registros completos, sem filtro de status para garantir que encontremos todos os clientes
-      const q = query(collection(db, 'registrations'));
-      const querySnapshot = await getDocs(q);
-      
-      console.log(`Encontrados ${querySnapshot.docs.length} registros de clientes.`);
-      
-      const clientsData = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        console.log('Dados do cliente:', doc.id, data);
-        
-        // Determinar o nome do cliente com base no tipo (PF ou PJ)
-        let clientName = 'Nome não disponível';
-        let clientType: 'PF' | 'PJ' = data.type || 'PF';
-        
-        if (clientType === 'PF') {
-          clientName = data.name || 'Cliente PF';
-        } else if (clientType === 'PJ') {
-          clientName = data.companyName || data.name || 'Cliente PJ';
-        }
-        
-        console.log(`Cliente processado: ${clientName} (${clientType}) - ID: ${doc.id}`);
-        
-        return {
-          id: doc.id,
-          name: clientName,
-          type: clientType,
-        };
-      }).filter(client => client.name !== 'Nome não disponível');
-
-      console.log('Total de clientes válidos encontrados:', clientsData.length);
-      
-      // Ordenar por nome para facilitar a busca
-      const sortedClients = clientsData.sort((a, b) => a.name.localeCompare(b.name));
-      
-      setClients(sortedClients);
-      setFilteredClients(sortedClients);
-    } catch (error) {
-      console.error('Erro ao buscar clientes:', error);
-      // Mostrar lista vazia em caso de erro
-      setClients([]);
-      setFilteredClients([]);
     }
   };
 
@@ -589,7 +1222,7 @@ export default function Proposals() {
           {
             message: `Proposta duplicada a partir da proposta ${originalProposal.proposalNumber || 'anterior'}`,
             date: new Date(),
-            author: user?.name || user?.email || 'Sistema',
+            author: user?.name || 'Sistema',
           }
         ]
       };
@@ -635,37 +1268,6 @@ export default function Proposals() {
       }, 5000);
     } finally {
       setDuplicatingProposal(false);
-    }
-  };
-
-  const resetFilters = () => {
-    setClientNameFilter('');
-    setStatusFilter('all');
-    setPipelineStatusFilter('all');
-    setDateFilter('');
-  };
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
-  };
-
-  const handleCreateNewProposal = () => {
-    setShowNewProposalModal(true);
-    setClientSearchTerm('');
-    setSelectedClient(null);
-  };
-
-  const handleSelectClient = (client: { id: string; name: string; type: 'PF' | 'PJ' }) => {
-    setSelectedClient(client);
-  };
-
-  const handleConfirmNewProposal = () => {
-    if (selectedClient) {
-      setShowNewProposalModal(false);
-      navigate(`/proposals/new/${selectedClient.id}`);
     }
   };
 
@@ -717,29 +1319,11 @@ export default function Proposals() {
     }
   };
 
-  const getClientType = async (clientId: string): Promise<'PF' | 'PJ'> => {
-    if (!clientId) return 'PF'; // Valor padrão se não houver ID
-    
-    try {
-      const clientRef = doc(db, 'registrations', clientId);
-      const clientSnap = await getDoc(clientRef);
-      
-      if (clientSnap.exists()) {
-        const clientData = clientSnap.data();
-        return clientData.type === 'PJ' ? 'PJ' : 'PF';
-      }
-    } catch (error) {
-      console.error('Erro ao obter tipo do cliente:', error);
-    }
-    
-    return 'PF'; // Valor padrão em caso de erro
-  };
-
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0">
         <h2 className="text-xl md:text-2xl font-semibold text-white">Controle de Propostas</h2>
-        {isAdmin && (
+        {canCreateProposals && (
           <button
             onClick={handleCreateNewProposal}
             className="flex items-center px-4 py-2 bg-white text-black rounded-md hover:bg-gray-100 w-full sm:w-auto justify-center sm:justify-start"
@@ -755,67 +1339,50 @@ export default function Proposals() {
         onClick={toggleFilters}
         className="flex items-center justify-center w-full py-2 bg-black border border-gray-600 text-white rounded-lg mb-6"
       >
-        {filtersOpen ? (
+        {showFilters ? (
           <X className="h-4 w-4 mr-1" />
         ) : (
           <Search className="h-4 w-4 mr-1" />
         )}
-        <span>{filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}</span>
+        <span>{showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}</span>
       </button>
-      
+
       {/* Filtros */}
-      {filtersOpen && (
+      {showFilters && (
         <div className="bg-black border border-gray-700 rounded-lg p-4 space-y-4 w-full overflow-hidden">
           <h3 className="text-lg font-medium text-white mb-2">Filtros</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-            {/* Filtro por data */}
-            <div>
-              <label htmlFor="dateFilter" className="block text-sm font-medium text-white mb-1">
-                Data da Proposta
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  id="dateFilter"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
-              </div>
-            </div>
-            
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
             {/* Filtro por nome do cliente */}
-            <div>
-              <label htmlFor="clientNameFilter" className="block text-sm font-medium text-white mb-1">
-                Nome do Cliente
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  id="clientNameFilter"
-                  value={clientNameFilter}
-                  onChange={(e) => setClientNameFilter(e.target.value)}
-                  className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Buscar por nome..."
-                />
-                <Search className="absolute right-3 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-gray-400" />
               </div>
+              <input
+                type="text"
+                placeholder="Buscar por cliente"
+                value={clientNameFilter}
+                onChange={(e) => setClientNameFilter(e.target.value)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full pl-10 pr-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              {clientNameFilter && (
+                <button
+                  onClick={() => setClientNameFilter('')}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                >
+                  <X className="h-4 w-4 text-gray-400 hover:text-white" />
+                </button>
+              )}
             </div>
-            
-            {/* Filtro por status da proposta */}
+
+            {/* Filtro por status */}
             <div>
-              <label htmlFor="statusFilter" className="block text-sm font-medium text-white mb-1">
-                Status da Proposta
-              </label>
               <select
-                id="statusFilter"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="all">Todos</option>
+                <option value="all">Todos os status</option>
                 <option value="pending">Cadastro Enviado</option>
                 <option value="in_analysis">Em Análise</option>
                 <option value="with_pendencies">Pendências</option>
@@ -823,19 +1390,15 @@ export default function Proposals() {
                 <option value="rejected">Recusada</option>
               </select>
             </div>
-            
+
             {/* Filtro por status do pipeline */}
             <div>
-              <label htmlFor="pipelineStatusFilter" className="block text-sm font-medium text-white mb-1">
-                Status do Pipeline
-              </label>
               <select
-                id="pipelineStatusFilter"
                 value={pipelineStatusFilter}
                 onChange={(e) => setPipelineStatusFilter(e.target.value as any)}
                 className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="all">Todos</option>
+                <option value="all">Todos os estágios</option>
                 <option value="submitted">Cadastro Enviado</option>
                 <option value="pre_analysis">Pré-Análise</option>
                 <option value="credit">Crédito</option>
@@ -843,10 +1406,47 @@ export default function Proposals() {
                 <option value="contract">Em Contrato</option>
               </select>
             </div>
+
+            {/* Filtro por data */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Calendar className="h-4 w-4 text-gray-400" />
+              </div>
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="bg-black border border-gray-600 text-white rounded-md w-full pl-10 pr-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              {dateFilter && (
+                <button
+                  onClick={() => setDateFilter('')}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                >
+                  <X className="h-4 w-4 text-gray-400 hover:text-white" />
+                </button>
+              )}
+            </div>
+
+            {/* Filtro por equipe */}
+            {(proposalsScope === 'all' || proposalsScope === 'team') && (
+              <div>
+                <select
+                  value={teamFilter}
+                  onChange={(e) => setTeamFilter(e.target.value)}
+                  className="bg-black border border-gray-600 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Todas as equipes</option>
+                  {teams.map(team => (
+                    <option key={team.id} value={team.id}>{team.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
-          
+
           {/* Botão para limpar filtros */}
-          {(dateFilter || clientNameFilter || statusFilter !== 'all' || pipelineStatusFilter !== 'all') && (
+          {(clientNameFilter || statusFilter !== 'all' || pipelineStatusFilter !== 'all' || dateFilter || teamFilter) && (
             <button
               onClick={resetFilters}
               className="flex items-center text-sm text-white hover:text-blue-300"
@@ -857,7 +1457,7 @@ export default function Proposals() {
           )}
         </div>
       )}
-      
+
       {/* Tabela de Propostas */}
       <div className="bg-black border border-gray-700 rounded-lg overflow-hidden w-full">
         {loading ? (
@@ -887,11 +1487,14 @@ export default function Proposals() {
                       Banco
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                      Status
+                      Status do Pipeline
                     </th>
-                    {isAdmin && (
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
+                      Status da Proposta
+                    </th>
+                    {(proposalsScope === 'all' || proposalsScope === 'team') && (
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
-                        Status do Pipeline
+                        Equipe
                       </th>
                     )}
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider bg-[#A4A4A4]">
@@ -903,20 +1506,22 @@ export default function Proposals() {
                   {filteredProposals.map((proposal) => (
                     <tr key={proposal.id} className="hover:bg-gray-900">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div 
+                        <div
                           className="text-sm text-gray-300 cursor-help"
-                          title={format(new Date(proposal.createdAt), 'dd/MM/yyyy HH:mm:ss', { locale: ptBR })}
+                          title={formatDate(proposal.createdAt)}
                         >
-                          {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                          {formatDate(proposal.createdAt)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-white">{proposal.proposalNumber}</div>
+                        <div className="text-sm font-medium text-white">
+                          {proposal.proposalNumber || `PROP-${formatDate(proposal.createdAt).substring(6, 10)}-${proposal.id.substring(0, 4).toUpperCase()}`}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-white">
                           {proposal.clientId ? (
-                            <button 
+                            <button
                               onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
                               className="hover:underline hover:text-blue-300 text-left"
                             >
@@ -934,15 +1539,27 @@ export default function Proposals() {
                         <div className="text-sm text-white">{proposal.bankTradingName || proposal.bankName || "Não informado"}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
-                          {proposalStatusLabels[proposal.status]}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus] || pipelineStatusColors.submitted}`}>
+                          {pipelineStatusLabels[proposal.pipelineStatus] || pipelineStatusLabels.submitted}
                         </span>
                       </td>
-                      {isAdmin && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status] || proposalStatusColors.pending}`}>
+                          {proposalStatusLabels[proposal.status] || proposalStatusLabels.pending}
+                        </span>
+                      </td>
+                      {(proposalsScope === 'all' || proposalsScope === 'team') && (
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus]}`}>
-                            {pipelineStatusLabels[proposal.pipelineStatus]}
-                          </span>
+                          {(proposal as any).teamCode ? (
+                            <span 
+                              className="px-2 py-1 text-xs font-medium rounded-md bg-blue-900 text-blue-200 cursor-help inline-block"
+                              title={`Equipe: ${(proposal as any).teamName}`}
+                            >
+                              {(proposal as any).teamCode}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">Sem equipe</span>
+                          )}
                         </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
@@ -954,8 +1571,16 @@ export default function Proposals() {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+
+                          <button
+                            onClick={() => handleEditProposal(proposal.id)}
+                            className="text-amber-400 hover:text-amber-300 hover:drop-shadow-[0_0_4px_rgba(251,191,36,0.6)] transition-all"
+                            title="Editar"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
                           
-                          {isAdmin && (
+                          {canEditProposals && user?.roleKey !== 'partner' && (
                             <>
                               <button
                                 onClick={() => handleEditProposal(proposal.id)}
@@ -964,44 +1589,32 @@ export default function Proposals() {
                               >
                                 <Pencil className="h-4 w-4" />
                               </button>
-                              
                               <button
                                 onClick={() => {
                                   setProposalToChangeStatus(proposal.id);
                                   setShowStatusModal(true);
                                 }}
-                                className="text-green-400 hover:text-green-300 hover:drop-shadow-[0_0_4px_rgba(74,222,128,0.6)] transition-all"
+                                className="text-blue-400 hover:text-blue-300 hover:drop-shadow-[0_0_4px_rgba(59,130,246,0.6)] transition-all"
                                 title="Alterar Status"
                               >
-                                <CheckCircle className="h-4 w-4" />
+                                <Clock className="h-4 w-4" />
                               </button>
-                              
                               <button
                                 onClick={() => {
-                                  setProposalToDuplicate(proposal.id);
-                                  setProposalToDuplicateNumber(proposal.proposalNumber);
-                                  setShowDuplicateModal(true);
+                                  setProposalForPendency(proposal.id);
+                                  setShowPendencyModal(true);
                                 }}
-                                className="text-indigo-400 hover:text-indigo-300 hover:drop-shadow-[0_0_4px_rgba(129,140,248,0.6)] transition-all"
-                                title="Duplicar Proposta"
+                                className="text-orange-400 hover:text-orange-300 hover:drop-shadow-[0_0_4px_rgba(249,115,22,0.6)] transition-all"
+                                title="Adicionar Pendência"
                               >
-                                <Copy className="h-4 w-4" />
+                                <AlertTriangle className="h-4 w-4" />
                               </button>
-                              
-                              <button
-                                onClick={() => handleAddObservation(proposal.id)}
-                                className="text-purple-400 hover:text-purple-300 hover:drop-shadow-[0_0_4px_rgba(167,139,250,0.6)] transition-all"
-                                title="Adicionar Observação"
-                              >
-                                <MessageSquarePlus className="h-4 w-4" />
-                              </button>
-                              
                               <button
                                 onClick={() => {
                                   setProposalToDelete(proposal.id);
                                   setShowDeleteModal(true);
                                 }}
-                                className="text-rose-400 hover:text-rose-300 hover:drop-shadow-[0_0_4px_rgba(251,113,133,0.6)] transition-all"
+                                className="text-red-400 hover:text-red-300 hover:drop-shadow-[0_0_4px_rgba(248,113,113,0.6)] transition-all"
                                 title="Excluir"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1015,7 +1628,7 @@ export default function Proposals() {
                 </tbody>
               </table>
             </div>
-            
+
             {/* Versão para Mobile - Cards */}
             <div className="block md:hidden">
               <div className="divide-y divide-gray-700">
@@ -1023,9 +1636,9 @@ export default function Proposals() {
                   <div key={proposal.id} className="p-4 hover:bg-gray-900">
                     <div className="flex justify-between items-start mb-3">
                       <div className="max-w-[70%]">
-                        <div className="text-sm font-medium text-white mb-1">{proposal.proposalNumber}</div>
+                        <div className="text-sm font-medium text-white mb-1">{proposal.proposalNumber || `PROP-${formatDate(proposal.createdAt).substring(6, 10)}-${proposal.id.substring(0, 4).toUpperCase()}`}</div>
                         <div className="text-xs text-gray-400">
-                          {format(new Date(proposal.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                          {formatDate(proposal.createdAt)}
                         </div>
                       </div>
                       <div className="flex space-x-2">
@@ -1036,8 +1649,8 @@ export default function Proposals() {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        
-                        {isAdmin && (
+
+                        {canEditProposals && user?.roleKey !== 'partner' && (
                           <>
                             <button
                               onClick={() => handleEditProposal(proposal.id)}
@@ -1050,13 +1663,13 @@ export default function Proposals() {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-2 mb-3">
                       <div>
                         <div className="text-xs text-gray-400 mb-1">Cliente</div>
                         <div className="text-sm text-white truncate max-w-full block">
                           {proposal.clientId ? (
-                            <button 
+                            <button
                               onClick={() => navigate(`/clients/detail/${proposal.clientId}`)}
                               className="hover:underline hover:text-blue-300 text-left truncate max-w-full block"
                             >
@@ -1067,75 +1680,80 @@ export default function Proposals() {
                           )}
                         </div>
                       </div>
-                      
+
                       <div>
                         <div className="text-xs text-gray-400 mb-1">Valor</div>
                         <div className="text-sm text-white">{formatCurrency(proposal.desiredCredit)}</div>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-2 mb-3">
                       <div>
                         <div className="text-xs text-gray-400 mb-1">Banco</div>
                         <div className="text-sm text-white truncate max-w-full">{proposal.bankTradingName || proposal.bankName || "Não informado"}</div>
                       </div>
-                      
+
                       <div>
-                        <div className="text-xs text-gray-400 mb-1">Status</div>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status]}`}>
-                          {proposalStatusLabels[proposal.status]}
+                        <div className="text-xs text-gray-400 mb-1">Status do Pipeline</div>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus] || pipelineStatusColors.submitted}`}>
+                          {pipelineStatusLabels[proposal.pipelineStatus] || pipelineStatusLabels.submitted}
                         </span>
                       </div>
                     </div>
-                    
-                    {isAdmin && (
+
+                    <div className="mt-3">
+                      <div className="text-xs text-gray-400 mb-1">Status da Proposta</div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proposalStatusColors[proposal.status] || proposalStatusColors.pending}`}>
+                        {proposalStatusLabels[proposal.status] || proposalStatusLabels.pending}
+                      </span>
+                    </div>
+
+                    {(proposalsScope === 'all' || proposalsScope === 'team') && (
                       <div className="mt-3">
-                        <div className="text-xs text-gray-400 mb-1">Status do Pipeline</div>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${pipelineStatusColors[proposal.pipelineStatus]}`}>
-                          {pipelineStatusLabels[proposal.pipelineStatus]}
-                        </span>
+                        <div className="text-xs text-gray-400 mb-1">Equipe</div>
+                        {(proposal as any).teamCode ? (
+                          <span 
+                            className="px-2 py-1 text-xs font-medium rounded-md bg-blue-900 text-blue-200 cursor-help inline-block"
+                            title={`Equipe: ${(proposal as any).teamName}`}
+                          >
+                            {(proposal as any).teamCode}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">Sem equipe</span>
+                        )}
                       </div>
                     )}
-                    
-                    {isAdmin && (
+
+                    {canEditProposals && (
                       <div className="mt-3 pt-3 border-t border-gray-800 flex justify-end space-x-3">
                         <button
                           onClick={() => {
                             setProposalToChangeStatus(proposal.id);
                             setShowStatusModal(true);
                           }}
-                          className="text-green-400 hover:text-green-300 transition-all"
+                          className="text-blue-400 hover:text-blue-300 transition-all"
                           title="Alterar Status"
                         >
-                          <CheckCircle className="h-4 w-4" />
+                          <Clock className="h-4 w-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => {
-                            setProposalToDuplicate(proposal.id);
-                            setProposalToDuplicateNumber(proposal.proposalNumber);
-                            setShowDuplicateModal(true);
+                            setProposalForPendency(proposal.id);
+                            setShowPendencyModal(true);
                           }}
-                          className="text-indigo-400 hover:text-indigo-300 transition-all"
-                          title="Duplicar Proposta"
+                          className="text-orange-400 hover:text-orange-300 transition-all"
+                          title="Adicionar Pendência"
                         >
-                          <Copy className="h-4 w-4" />
+                          <AlertTriangle className="h-4 w-4" />
                         </button>
-                        
-                        <button
-                          onClick={() => handleAddObservation(proposal.id)}
-                          className="text-purple-400 hover:text-purple-300 transition-all"
-                          title="Adicionar Observação"
-                        >
-                          <MessageSquarePlus className="h-4 w-4" />
-                        </button>
-                        
+
                         <button
                           onClick={() => {
                             setProposalToDelete(proposal.id);
                             setShowDeleteModal(true);
                           }}
-                          className="text-rose-400 hover:text-rose-300 transition-all"
+                          className="text-red-400 hover:text-red-300 transition-all"
                           title="Excluir"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1146,14 +1764,14 @@ export default function Proposals() {
                 ))}
               </div>
             </div>
-          </> 
+          </>
         ) : (
           <div className="py-8 text-center text-white">
             <p>Nenhuma proposta encontrada com os filtros aplicados.</p>
           </div>
         )}
       </div>
-      
+
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -1182,7 +1800,7 @@ export default function Proposals() {
           </div>
         </div>
       )}
-      
+
       {/* Modal de Alteração de Status */}
       {showStatusModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -1261,20 +1879,20 @@ export default function Proposals() {
             <p className="text-gray-300 mb-4">
               Selecione um cliente para criar uma nova proposta:
             </p>
-            
+
             <div className="mb-4">
               <div className="relative">
                 <input
                   type="text"
-                  value={clientSearchTerm}
-                  onChange={(e) => setClientSearchTerm(e.target.value)}
+                  value={clientSearchText}
+                  onChange={(e) => setClientSearchText(e.target.value)}
                   placeholder="Buscar cliente por nome..."
-                  className="bg-black border border-gray-700 text-white rounded-md w-full px-3 py-2.5 h-10 pl-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="bg-black border border-gray-700 text-white rounded-md w-full px-3 py-2.5 h-10 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <Search className="h-4 w-4 text-gray-400 absolute left-3 top-3" />
-                {clientSearchTerm && (
-                  <button 
-                    onClick={() => setClientSearchTerm('')}
+                {clientSearchText && (
+                  <button
+                    onClick={() => setClientSearchText('')}
                     className="absolute right-3 top-3"
                   >
                     <X className="h-4 w-4 text-gray-400 hover:text-white" />
@@ -1282,7 +1900,7 @@ export default function Proposals() {
                 )}
               </div>
             </div>
-            
+
             <div className="max-h-60 overflow-y-auto mb-6 border border-gray-800 rounded-md">
               {filteredClients.length > 0 ? (
                 <div className="divide-y divide-gray-800">
@@ -1290,62 +1908,56 @@ export default function Proposals() {
                     <div
                       key={client.id}
                       onClick={() => handleSelectClient(client)}
-                      className={`p-3 cursor-pointer hover:bg-gray-800 flex items-center justify-between ${
-                        selectedClient?.id === client.id ? 'bg-gray-800' : ''
+                      className={`p-3 cursor-pointer ${
+                        selectedClient?.id === client.id
+                          ? 'bg-blue-900/30 border-l-4 border-blue-500'
+                          : 'hover:bg-gray-800'
                       }`}
                     >
                       <div className="flex items-center">
-                        <User className="h-5 w-5 text-gray-400 mr-3" />
+                        {client.type === 'PF' ? (
+                          <User className="h-5 w-5 text-gray-400 mr-2" />
+                        ) : (
+                          <Building2 className="h-5 w-5 text-gray-400 mr-2" />
+                        )}
                         <div>
-                          <p className="text-sm text-white">{client.name}</p>
-                          <p className="text-xs text-gray-400">{client.type === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'}</p>
+                          <div className="text-sm font-medium text-white">
+                            {client.name}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {client.type === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'}
+                          </div>
                         </div>
                       </div>
-                      {selectedClient?.id === client.id && (
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                      )}
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="p-4 text-center text-gray-400">
-                  {clients.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-4">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mb-2"></div>
-                      <p>Carregando clientes...</p>
-                    </div>
-                  ) : clientSearchTerm ? (
-                    'Nenhum cliente encontrado com este nome'
-                  ) : (
-                    'Nenhum cliente cadastrado'
-                  )}
+                  {clientSearchText
+                    ? 'Nenhum cliente encontrado com esse nome'
+                    : 'Carregando clientes...'}
                 </div>
               )}
             </div>
-            
+
             <div className="flex justify-between items-center mt-2 mb-4">
               <div className="text-xs text-gray-400">
-                {filteredClients.length > 0 ? 
-                  `${filteredClients.length} cliente${filteredClients.length !== 1 ? 's' : ''} encontrado${filteredClients.length !== 1 ? 's' : ''}` : 
-                  ''}
+                {filteredClients.length > 0 ? `${filteredClients.length} cliente${filteredClients.length !== 1 ? 's' : ''} encontrado${filteredClients.length !== 1 ? 's' : ''}` : ''}
               </div>
               <button
                 onClick={fetchClients}
-                className="text-xs text-blue-400 hover:text-blue-300 flex items-center"
+                className="text-xs text-blue-400 hover:text-blue-300"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
                 Atualizar lista
               </button>
             </div>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
                   setShowNewProposalModal(false);
                   setSelectedClient(null);
-                  setClientSearchTerm('');
                 }}
                 className="px-4 py-2 bg-transparent border border-gray-700 text-white rounded-md hover:bg-gray-800"
               >
@@ -1354,11 +1966,11 @@ export default function Proposals() {
               <button
                 onClick={handleConfirmNewProposal}
                 disabled={!selectedClient}
-                className={`px-4 py-2 text-white rounded-md ${
+                className={`px-4 py-2 ${
                   selectedClient
                     ? 'bg-blue-600 hover:bg-blue-700'
                     : 'bg-blue-600/50 cursor-not-allowed'
-                }`}
+                } text-white rounded-md`}
               >
                 Continuar
               </button>
@@ -1394,7 +2006,7 @@ export default function Proposals() {
                   }
                 }}
                 disabled={duplicatingProposal}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {duplicatingProposal ? (
                   <div className="flex items-center">
@@ -1418,7 +2030,7 @@ export default function Proposals() {
             <p className="text-gray-300 mb-4">
               Adicione uma observação sobre esta proposta:
             </p>
-            
+
             <div className="mb-4">
               <textarea
                 value={observationText}
@@ -1427,7 +2039,7 @@ export default function Proposals() {
                 className="bg-gray-900 border border-gray-700 text-white rounded-md w-full px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[100px]"
               />
             </div>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -1507,9 +2119,9 @@ export default function Proposals() {
       )}
 
       {/* Botão para criar nova proposta */}
-      {isAdmin && (
+      {canCreateProposals && (
         <button
-          onClick={() => setShowNewProposalModal(true)}
+          onClick={handleCreateNewProposal}
           className="fixed bottom-8 right-8 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-6 w-6" />

@@ -46,6 +46,13 @@ interface Registration {
     createdBy: string;
     createdByName: string;
   }>;
+  teamName?: string;
+  teamCode?: string;
+  team?: string;
+  partnerId?: string;
+  partnerName?: string;
+  managerId?: string;
+  managerName?: string;
 }
 
 const pipelineStatusLabels = {
@@ -117,6 +124,45 @@ export default function ClientDetail() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           console.log('Dados do cliente encontrados:', data);
+          
+          // Inicializar variáveis
+          let teamName = '';
+          let teamCode = '';
+          let managerName = '';
+          let partnerName = '';
+          
+          // Obter o parceiro vinculado diretamente do campo inviterName na coleção registrations
+          partnerName = data.inviterName || '';
+          console.log('Parceiro vinculado (inviterName):', partnerName);
+          
+          // Buscar informações da equipe e do gerente na coleção teams
+          if (data.team) {
+            try {
+              const teamDoc = await getDoc(doc(db, 'teams', data.team));
+              if (teamDoc.exists()) {
+                const teamData = teamDoc.data();
+                teamName = teamData.name || '';
+                teamCode = teamData.teamCode || '';
+                
+                // Obter o gerente de equipe diretamente do campo managerName na coleção teams
+                managerName = teamData.managerName || '';
+                console.log('Gerente de equipe (managerName da equipe):', managerName);
+              }
+            } catch (err) {
+              console.error('Erro ao buscar informações da equipe:', err);
+            }
+          } else {
+            // Se não tiver equipe, usar os campos teamCode e teamName diretamente do documento
+            teamName = data.teamName || '';
+            teamCode = data.teamCode || '';
+          }
+          
+          console.log('Dados processados:', {
+            teamName,
+            teamCode,
+            managerName,
+            partnerName
+          });
           
           // Tratamento seguro para o timeline de observações
           const safeObservationsTimeline = Array.isArray(data.observationsTimeline) 
@@ -233,16 +279,21 @@ export default function ClientDetail() {
           console.log('Status do Pipeline final:', pipelineStatus);
           
           // Atualizar o estado com os dados do cliente e o status do pipeline correto
+          // Definir o registro com os dados processados
           const registrationData: Registration = {
-            ...data,
             id,
+            ...data,
             type: data.type || 'PF',
             status: data.status || 'complete',
             pipelineStatus: pipelineStatus,
             userId: data.userId || '',
             createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
+            documents: processedDocuments,
             observationsTimeline: safeObservationsTimeline,
-            documents: processedDocuments
+            teamName,
+            teamCode,
+            managerName,
+            partnerName,
           };
           
           setRegistration(registrationData);
@@ -491,6 +542,44 @@ export default function ClientDetail() {
                 <h4 className="text-sm font-medium text-gray-400">Telefone</h4>
                 <p className="text-white">
                   {registration.ddi} {registration.phone?.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3')}
+                </p>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Equipe</h4>
+                <p className="text-white">
+                  {registration.teamCode ? (
+                    <span 
+                      className="px-2 py-1 text-xs font-medium rounded-md bg-blue-900 text-blue-200 cursor-help inline-block"
+                      title={`Equipe: ${registration.teamName}`}
+                    >
+                      {registration.teamCode}
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">Sem equipe</span>
+                  )}
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Gerente de Equipe</h4>
+                <p className="text-white">
+                  {registration.managerName ? (
+                    <span className="text-blue-400">{registration.managerName}</span>
+                  ) : (
+                    <span className="text-gray-500">Não vinculado</span>
+                  )}
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="text-sm font-medium text-gray-400">Parceiro Vinculado</h4>
+                <p className="text-white">
+                  {registration.partnerName ? (
+                    <span className="text-green-400">{registration.partnerName}</span>
+                  ) : (
+                    <span className="text-gray-500">Não vinculado</span>
+                  )}
                 </p>
               </div>
             </div>

@@ -1,57 +1,71 @@
 import { useState } from 'react';
 import { User, Lock, Save, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useRolePermissions } from '../../hooks/useRolePermissions';
 
 export default function UserProfile() {
   const { user, updateUserPassword } = useAuth();
-  
+  const { canPerformAction } = useRolePermissions();
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   // Estados para controlar a visibilidade das senhas
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Verificar se o usuário tem permissão para visualizar o perfil
+  if (!canPerformAction('myRegistration', 'view')) {
+    return (
+      <div className="p-6 bg-black rounded-lg shadow">
+        <h2 className="text-xl font-semibold text-red-600 dark:text-red-400">
+          Acesso Restrito
+        </h2>
+        <p className="mt-2">Você não tem permissão para acessar esta página.</p>
+      </div>
+    );
+  }
+
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Resetar mensagens
     setError(null);
     setSuccess(null);
-    
+
     // Validações
     if (!currentPassword || !newPassword || !confirmPassword) {
       setError('Todos os campos são obrigatórios');
       return;
     }
-    
+
     if (newPassword.length < 6) {
       setError('A nova senha deve ter pelo menos 6 caracteres');
       return;
     }
-    
+
     if (newPassword !== confirmPassword) {
       setError('A confirmação de senha não corresponde à nova senha');
       return;
     }
-    
+
     try {
       setLoading(true);
       await updateUserPassword(currentPassword, newPassword);
       setSuccess('Senha alterada com sucesso!');
-      
+
       // Limpar campos
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (error: any) {
       console.error('Erro ao alterar senha:', error);
-      
+
       // Tratar mensagens de erro específicas do Firebase
       if (error.code === 'auth/wrong-password') {
         setError('Senha atual incorreta');
@@ -71,7 +85,7 @@ export default function UserProfile() {
         <User className="h-6 w-6 mr-3" />
         <h2 className="text-2xl font-semibold">Meu Perfil</h2>
       </div>
-      
+
       <div className="p-6">
         {/* Informações do usuário */}
         <div className="mb-8">
@@ -89,9 +103,9 @@ export default function UserProfile() {
               <div>
                 <p className="text-gray-400 text-sm mb-1">Função</p>
                 <p className="text-white font-medium capitalize">
-                  {user?.role === 'admin' ? 'Administrador' : 
-                   user?.role === 'manager' ? 'Gerente' : 
-                   user?.role === 'client' ? 'Cliente' : user?.role}
+                  {user?.roleKey === 'admin' ? 'Administrador' : 
+                   user?.roleKey === 'manager' ? 'Gerente' : 
+                   user?.roleKey === 'client' ? 'Cliente' : user?.roleName}
                 </p>
               </div>
               <div>
@@ -103,14 +117,14 @@ export default function UserProfile() {
             </div>
           </div>
         </div>
-        
+
         {/* Alteração de senha */}
         <div>
           <h3 className="text-xl font-semibold mb-4 flex items-center">
             <Lock className="h-5 w-5 mr-2" />
             Alterar Senha
           </h3>
-          
+
           <div className="bg-black border border-gray-800 rounded-lg p-6">
             {error && (
               <div className="mb-4 p-3 bg-rose-900/50 border border-rose-800 rounded-md flex items-start">
@@ -118,13 +132,13 @@ export default function UserProfile() {
                 <p className="text-rose-200 text-sm">{error}</p>
               </div>
             )}
-            
+
             {success && (
               <div className="mb-4 p-3 bg-emerald-900/50 border border-emerald-800 rounded-md">
                 <p className="text-emerald-200 text-sm">{success}</p>
               </div>
             )}
-            
+
             <form onSubmit={handlePasswordChange}>
               <div className="space-y-4">
                 <div>
@@ -153,7 +167,7 @@ export default function UserProfile() {
                     </button>
                   </div>
                 </div>
-                
+
                 <div>
                   <label htmlFor="newPassword" className="block text-sm font-medium text-gray-300 mb-1">
                     Nova Senha
@@ -180,7 +194,7 @@ export default function UserProfile() {
                     </button>
                   </div>
                 </div>
-                
+
                 <div>
                   <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-1">
                     Confirmar Nova Senha
@@ -207,7 +221,7 @@ export default function UserProfile() {
                     </button>
                   </div>
                 </div>
-                
+
                 <div className="pt-2">
                   <button
                     type="submit"

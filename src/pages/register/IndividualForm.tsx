@@ -5,16 +5,32 @@ import { z } from 'zod';
 import InputMask from 'react-input-mask';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { doc, setDoc, serverTimestamp, collection, addDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, addDoc, getDoc, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import CurrencyInput from '../../components/CurrencyInput';
 import LocalDocumentUpload from '../../components/LocalDocumentUpload';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Info } from 'lucide-react';
 import SuccessModal from '../../components/SuccessModal';
-import { webhookService } from '../../services/WebhookService';
+import { teamService } from '../../services/TeamService';
 
 interface IndividualFormProps {
   isEditing?: boolean;
+}
+
+interface InvitePayload {
+  userId: string;
+  email: string;
+  roleKey: string;
+  team: string;
+  timestamp: number;
+}
+
+interface LocationState {
+  inviteData?: InvitePayload;
+  inviterUserId?: string;
+  inviterEmail?: string;
+  inviterName?: string;
+  team?: string;
 }
 
 interface Document {
@@ -43,6 +59,7 @@ const schema = z.object({
   desiredCredit: z.coerce.number().min(1, 'Valor do crédito é obrigatório').nullable(),
   creditLine: z.string().optional(),
   creditReason: z.string().optional(),
+  teamCode: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema> & {
@@ -57,12 +74,58 @@ const MaskedInput = InputMask;
 export default function IndividualForm({ isEditing = false }: IndividualFormProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const [inviteInfo, setInviteInfo] = useState<any>(null);
+  const [isFromInvite, setIsFromInvite] = useState(false);
+  const [inviteData, setInviteData] = useState<any>(null);
+  const [inviterUserId, setInviterUserId] = useState<string>('');
+  const [inviterEmail, setInviterEmail] = useState<string>('');
+  const [inviterName, setInviterName] = useState<string>('');
+  const [team, setTeam] = useState<string>('');
+  
+  // Verificar se existe um convite armazenado no localStorage
+  useEffect(() => {
+    // Primeiro, verificar se temos dados no state da navegação
+    const state = location.state as LocationState || {};
+    if (state.inviteData) {
+      console.log('Dados de convite encontrados no state da navegação:', state);
+      setInviteData(state.inviteData);
+      setInviterUserId(state.inviterUserId || '');
+      setInviterEmail(state.inviterEmail || '');
+      setInviterName(state.inviterName || '');
+      setTeam(state.team || '');
+      setInviteInfo(state);
+      setIsFromInvite(true);
+      return;
+    }
+    
+    // Se não temos dados no state, verificar o localStorage
+    const storedInvite = localStorage.getItem('dolsCapitalInvite');
+    if (storedInvite) {
+      try {
+        const parsedInvite = JSON.parse(storedInvite);
+        console.log('Dados de convite encontrados no localStorage:', parsedInvite);
+        setInviteData(parsedInvite.inviteData);
+        setInviterUserId(parsedInvite.inviterUserId || '');
+        setInviterEmail(parsedInvite.inviterEmail || '');
+        setInviterName(parsedInvite.inviterName || parsedInvite.inviterDisplayName || '');
+        setTeam(parsedInvite.team || '');
+        setInviteInfo(parsedInvite);
+        setIsFromInvite(true);
+      } catch (error) {
+        console.error('Erro ao processar dados do convite do localStorage:', error);
+      }
+    }
+  }, [location.state]);
+
+  const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true); // Começar como true para mostrar o carregamento inicial
-  const [error, setError] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [teamName, setTeamName] = useState('');
+  const [teamCode, setTeamCode] = useState('');
+  const [isCheckingTeam, setIsCheckingTeam] = useState(false); // Começar como true para mostrar o carregamento inicial
+  const [error, setError] = useState<string | null>(null);
   const [documents, setDocuments] = useState<{
     identity_document?: Document;
     address_proof?: Document;
@@ -72,10 +135,9 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
   }>({});
 
   // Determinar se estamos em modo de edição baseado na presença de um ID na URL ou no estado da navegação
-  const locationState = location.state as { isEditing?: boolean } | null;
-  const isEditMode = Boolean(id) || isEditing || Boolean(locationState?.isEditing);
-  
-  console.log('Modo de edição:', isEditMode, 'ID:', id, 'isEditing prop:', isEditing, 'location state:', locationState);
+  const isEditMode = Boolean(id) || isEditing;
+
+  console.log('Modo de edição:', isEditMode, 'ID:', id, 'isEditing prop:', isEditing, 'location state:', location.state);
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<FormData>({
     defaultValues: {
@@ -104,6 +166,38 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
   const hasProperty = watch('hasProperty');
 
   // Efeito para carregar os dados do cliente quando o componente é montado
+  // Buscar informações da equipe do convite
+  useEffect(() => {
+    if (isFromInvite && team) {
+      const fetchTeamInfo = async () => {
+        try {
+          // Buscar a equipe pelo ID
+          const teamDoc = await getDoc(doc(db, 'teams', team));
+
+          if (teamDoc.exists()) {
+            const teamData = teamDoc.data();
+            const teamCodeValue = teamData.teamCode || '';
+            setTeamCode(teamCodeValue);
+            setTeamName(teamData.name || '');
+            
+            // Preencher automaticamente o campo de código da equipe no formulário
+            if (teamCodeValue) {
+              console.log('Preenchendo automaticamente o código da equipe:', teamCodeValue);
+              // Usar o setValue do react-hook-form para preencher o campo
+              setValue('teamCode', teamCodeValue);
+              // Chamar o checkTeamCode para atualizar o nome da equipe na interface
+              checkTeamCode(teamCodeValue);
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao buscar informações da equipe:', error);
+        }
+      };
+
+      fetchTeamInfo();
+    }
+  }, [isFromInvite, team, setValue]);
+
   useEffect(() => {
     const loadUserData = async () => {
       // Só carrega os dados se estiver editando ou se tiver um ID na URL
@@ -112,25 +206,25 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           console.log('Iniciando carregamento de dados do cliente pessoa física...');
           // Usar o ID da URL se disponível, caso contrário usar o ID do usuário logado
           const registrationId = id || user?.id;
-          
+
           if (!registrationId) {
             console.error('ID não encontrado para carregar os dados');
             setInitialLoading(false);
             return;
           }
-          
+
           console.log('Carregando dados do cliente com ID:', registrationId);
           const docRef = doc(db, 'registrations', registrationId);
           const docSnap = await getDoc(docRef);
-          
+
           if (docSnap.exists()) {
             const data = docSnap.data();
             console.log('Dados do cliente encontrados:', data);
-            
+
             // Verificar se o cliente é do tipo pessoa física
             const clientType = data.type;
             console.log('Tipo de cliente:', clientType);
-            
+
             if (clientType !== 'PF') {
               console.error('Tentando carregar cliente não-PF no formulário de pessoa física');
               setError('Este cliente não é uma pessoa física. Redirecionando...');
@@ -139,12 +233,12 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
               }, 2000);
               return;
             }
-            
+
             // Primeiro, definir todos os campos exceto desiredCredit e propertyValue
             Object.entries(data).forEach(([key, value]) => {
               if (key !== 'documents' && key !== 'createdAt' && key !== 'updatedAt' && key !== 'desiredCredit' && key !== 'propertyValue') {
                 console.log(`Definindo campo ${key} com valor:`, value);
-                
+
                 // Tratamento especial para campos aninhados como address
                 if (key === 'address' && typeof value === 'object') {
                   Object.entries(value as Record<string, any>).forEach(([addressKey, addressValue]) => {
@@ -156,37 +250,49 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                 }
               }
             });
-            
+
+            // Verificar e definir o código e nome da equipe
+            if (data.teamCode) {
+              console.log('Definindo código da equipe:', data.teamCode);
+              // Não usar setValue para teamCode, pois não está no schema
+              setTeamCode(data.teamCode);
+            }
+
+            if (data.teamName) {
+              console.log('Definindo nome da equipe:', data.teamName);
+              setTeamName(data.teamName);
+            }
+
             // Definir o valor do crédito desejado separadamente para garantir que seja tratado como número
             if (data.desiredCredit !== undefined) {
               console.log('Definindo crédito desejado:', data.desiredCredit);
               setValue('desiredCredit', data.desiredCredit);
-              
+
               // Definir novamente com um pequeno atraso para garantir que o componente esteja pronto
               setTimeout(() => {
                 console.log('Definindo crédito desejado com atraso:', data.desiredCredit);
                 setValue('desiredCredit', data.desiredCredit);
               }, 500);
             }
-            
+
             // Definir o valor do imóvel separadamente para garantir que seja tratado como número
             if (data.propertyValue !== undefined) {
               console.log('Definindo valor do imóvel:', data.propertyValue);
               setValue('propertyValue', data.propertyValue);
-              
+
               // Definir novamente com um pequeno atraso para garantir que o componente esteja pronto
               setTimeout(() => {
                 console.log('Definindo valor do imóvel com atraso:', data.propertyValue);
                 setValue('propertyValue', data.propertyValue);
               }, 500);
             }
-            
+
             // Carregar documentos
             if (data.documents) {
               console.log('Documentos encontrados:', data.documents);
               // Converter os documentos para o formato esperado pelo componente
               const formattedDocuments: Record<string, Document> = {};
-              
+
               Object.entries(data.documents).forEach(([key, value]) => {
                 const doc = value as any;
                 if (doc) {
@@ -199,7 +305,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
                   };
                 }
               });
-              
+
               console.log('Documentos formatados:', formattedDocuments);
               setDocuments(formattedDocuments);
             }
@@ -225,19 +331,19 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
 
   const searchCep = async (cep: string) => {
     if (cep.length < 8) return;
-    
+
     try {
       // Remover caracteres não numéricos
       const cleanCep = cep.replace(/\D/g, '');
-      
+
       // Fazer a requisição para a API do ViaCEP
       const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
       const data = await response.json();
-      
+
       if (data.erro) {
         throw new Error('CEP não encontrado');
       }
-      
+
       // Preencher os campos com os dados retornados
       setValue('street', data.logradouro || '');
       setValue('neighborhood', data.bairro || '');
@@ -262,18 +368,45 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
     setError(error);
   };
 
+  // Função para verificar o código da equipe
+  const checkTeamCode = async (code: string) => {
+    if (!code || code.length !== 4 || !/^\d{4}$/.test(code)) {
+      setTeamName('');
+      return;
+    }
+
+    setIsCheckingTeam(true);
+    try {
+      const teamsRef = collection(db, 'teams');
+      const teamQuery = query(teamsRef, where('teamCode', '==', code));
+      const teamSnapshot = await getDocs(teamQuery);
+
+      if (!teamSnapshot.empty) {
+        const teamData = teamSnapshot.docs[0].data();
+        setTeamName(teamData.name);
+      } else {
+        setTeamName('');
+      }
+    } catch (error) {
+      console.error('Erro ao verificar código da equipe:', error);
+      setTeamName('');
+    } finally {
+      setIsCheckingTeam(false);
+    }
+  };
+
   const onSubmit = async (data: FormData) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Determinar o ID a ser usado para o registro
       const registrationId = id || user?.id;
-      
+
       if (!registrationId) {
         throw new Error('ID não encontrado para salvar os dados');
       }
-      
+
       // Garantir que os valores numéricos sejam tratados corretamente
       const sanitizedData = {
         ...data,
@@ -282,10 +415,10 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
         // Garantir que desiredCredit seja 0 se não estiver definido
         desiredCredit: data.desiredCredit || 0
       };
-      
+
       // Preparar os documentos para salvar apenas as referências
       const documentReferences: Record<string, any> = {};
-      
+
       // Converter os documentos para referências
       if (documents) {
         Object.entries(documents).forEach(([key, doc]) => {
@@ -300,18 +433,25 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           }
         });
       }
-      
+
       // Preparar os dados para salvar
       const registrationData = {
         ...sanitizedData,
         documents: documentReferences, // Salvar apenas as referências
         type: 'PF', // Usar consistentemente 'PF' em vez de 'individual'
         pipelineStatus: 'submitted',
-        // Definir o status com base na existência de documentos
         status: Object.keys(documentReferences).length > 0 ? 'complete' : 'documents_pending',
         updatedAt: serverTimestamp(),
+        // Adicionar o código da equipe e o nome da equipe
+        teamCode: teamCode || '',
+        teamName: teamName || '',
+        // Adicionar informações do convite se disponíveis
+        inviterUserId: inviterUserId || '',
+        inviterEmail: inviterEmail || '',
+        inviterName: inviterName || '',
+        team: team || ''
       };
-      
+
       if (!isEditMode) {
         registrationData.createdAt = serverTimestamp();
       }
@@ -328,7 +468,103 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
         }
       }
       
-      await setDoc(doc(db, 'registrations', registrationId), registrationData, { merge: true });
+      // Salvar o registro no Firestore
+      if (!isEditMode) {
+        // Adicionar campos específicos para novos registros
+        const newRegistrationData = {
+          ...registrationData,
+          createdAt: serverTimestamp(),
+          userId: registrationId,
+          createdBy: user?.id || ''
+        };
+        
+        // Salvar o documento com o ID do usuário
+        await setDoc(doc(db, 'registrations', registrationId), newRegistrationData);
+        
+        // Se o registro veio de um convite e temos informações de equipe, atualizar a equipe com o gerente
+        if (isFromInvite && team && inviterUserId && inviterName) {
+          try {
+            console.log('Atualizando informações de equipe com o gerente:', { 
+              team, 
+              managerId: inviterUserId, 
+              managerName: inviterName 
+            });
+            
+            // Verificar se a roleKey do convidador é de gerente
+            if (inviteData?.roleKey?.includes('manager')) {
+              // Atualizar ou criar a equipe com as informações do gerente
+              await teamService.updateTeamManager(team, inviterUserId, inviterName);
+            }
+          } catch (teamError) {
+            console.error('Erro ao atualizar informações de equipe:', teamError);
+            // Não interromper o fluxo se a atualização da equipe falhar
+          }
+        }
+        
+        // Webhook removido - implementar conforme necessidade
+      } else {
+        await setDoc(doc(db, 'registrations', registrationId), registrationData, { merge: true });
+      }
+      
+      // Se estiver em modo de edição, atualizar todas as propostas relacionadas a este cliente
+      if (isEditMode) {
+        try {
+          // Buscar todas as propostas relacionadas a este cliente
+          const proposalsQuery = query(
+            collection(db, 'proposals'),
+            where('clientId', '==', registrationId)
+          );
+          const proposalsSnapshot = await getDocs(proposalsQuery);
+          
+          // Atualizar cada proposta com os dados atualizados da equipe
+          const proposalUpdates = proposalsSnapshot.docs.map(async (proposalDoc) => {
+            const proposalRef = doc(db, 'proposals', proposalDoc.id);
+            return updateDoc(proposalRef, {
+              teamCode: teamCode || '',
+              teamName: teamName || ''
+            });
+          });
+          
+          // Executar todas as atualizações em paralelo
+          if (proposalUpdates.length > 0) {
+            console.log(`Atualizando equipe em ${proposalUpdates.length} propostas relacionadas`);
+            await Promise.all(proposalUpdates);
+          }
+          
+          // Atualizar também o documento do usuário para manter a consistência
+          const userRef = doc(db, 'users', registrationId);
+          const userDoc = await getDoc(userRef);
+          
+          if (userDoc.exists()) {
+            console.log('Atualizando equipe no cadastro do usuário');
+            
+            // Se temos um código de equipe, precisamos buscar o ID da equipe
+            let teamId = '';
+            
+            if (teamCode) {
+              // Buscar o ID da equipe pelo código
+              const teamsQuery = query(
+                collection(db, 'teams'),
+                where('teamCode', '==', teamCode)
+              );
+              const teamsSnapshot = await getDocs(teamsQuery);
+              
+              if (!teamsSnapshot.empty) {
+                teamId = teamsSnapshot.docs[0].id;
+              }
+            }
+            
+            await updateDoc(userRef, {
+              team: teamId,
+              teamName: teamName || '',
+              teamCode: teamCode || ''
+            });
+          }
+        } catch (err) {
+          console.error('Erro ao atualizar propostas e usuário relacionados:', err);
+          // Não interromper o fluxo principal se houver erro na atualização das propostas
+        }
+      }
       
       // Enviar webhook de alteração de status se estiver em modo de edição e o status mudou
       if (isEditMode && previousStatus && previousStatus !== registrationData.status) {
@@ -378,7 +614,10 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           phone: sanitizedData.phone,
           email: sanitizedData.email,
           // Adicionar e-mail do usuário logado
-          userEmail: user?.email || ''
+          userEmail: user?.email || '',
+          // Incluir informações de equipe
+          teamCode: teamCode || '',
+          teamName: teamName || ''
         };
 
         console.log('Dados da proposta a serem salvos:', proposalData);
@@ -415,8 +654,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           pipelineStatus: sanitizedData.pipelineStatus || 'novo'
         };
         
-        // Disparar webhook de cliente criado imediatamente
-        await webhookService.sendClientCreated(clientData);
+        // Webhook de cliente criado removido
       } else if (isEditMode) {
         // Obter os dados atualizados do cliente do banco de dados
         const updatedClientDocRef = doc(db, 'clients', registrationId);
@@ -427,7 +665,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
             id: registrationId,
             ...updatedClientDoc.data()
           };
-          await webhookService.sendClientUpdated(updatedClientData);
+          // Webhook de cliente atualizado removido
         } else {
           // Fallback para o objeto clientData se não conseguir obter os dados atualizados
           const clientData = {
@@ -456,7 +694,7 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
             creditReason: sanitizedData.creditReason,
             pipelineStatus: sanitizedData.pipelineStatus || 'novo'
           };
-          await webhookService.sendClientUpdated(clientData);
+          // Webhook de cliente atualizado removido
         }
       }
       
@@ -486,15 +724,92 @@ export default function IndividualForm({ isEditing = false }: IndividualFormProp
           <h1 className="text-3xl font-semibold text-white mb-8">
             Cadastro de Pessoa Física
           </h1>
+          
+          {/* Mostrar informações do convite se disponíveis */}
+          {isFromInvite && (
+            <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-8">
+              <div className="flex items-start">
+                <Info className="h-5 w-5 text-blue-400 mr-2 mt-0.5" />
+                <div>
+                  <p className="text-white">
+                    Você está se cadastrando através de um convite de{' '}
+                    <span className="font-semibold">
+                      {inviteData?.roleKey === 'admin' ? 'um administrador' : 
+                       inviteData?.roleKey === 'manager' ? 'um gerente' : 
+                       inviteData?.roleKey === 'partner' ? 'um parceiro' : 'um usuário'}
+                    </span>
+                  </p>
+                  {teamName && (
+                    <p className="text-white mt-1">
+                      Você será vinculado à equipe <span className="font-semibold">{teamName}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} id="individual-form" className="space-y-6">
-            {/* Existing form sections */}
+            {/* Bloco do Código da Equipe */}
+            <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-4">
+              <h2 className="text-xl font-semibold text-white">
+                Código da Equipe
+              </h2>
+              
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label htmlFor="teamCode" className="block text-sm font-medium text-gray-300">
+                    Código da Equipe (4 dígitos)
+                  </label>
+                  <div className="mt-1 relative">
+                    <input
+                      type="text"
+                      id="teamCode"
+                      maxLength={4}
+                      value={teamCode}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '');
+                        setTeamCode(value);
+                        if (value.length === 4) {
+                          checkTeamCode(value);
+                        } else {
+                          setTeamName('');
+                        }
+                      }}
+                      className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-600 bg-black text-white placeholder-gray-400 focus:ring-[#D8B25A] focus:border-[#D8B25A] focus:z-10 shadow-sm"
+                      placeholder="0000"
+                    />
+                    {isCheckingTeam && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      </div>
+                    )}
+                  </div>
+                  {teamName && (
+                    <p className="mt-1 text-sm text-green-500">
+                      Equipe encontrada: {teamName}
+                    </p>
+                  )}
+                  {teamCode && teamCode.length === 4 && !teamName && !isCheckingTeam && (
+                    <p className="mt-1 text-sm text-yellow-500">
+                      Equipe não encontrada. Verifique o código.
+                    </p>
+                  )}
+                  <p className="mt-2 text-sm text-gray-400">
+                    Caso você não possua um código de equipe, pode seguir normalmente com o cadastro. O código pode ser fornecido pelo seu gerente ou consultor.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Dados Pessoais */}
             <div className="bg-black border border-gray-800 rounded-lg p-6 space-y-6">
               <h2 className="text-xl font-semibold text-white">
                 Dados Pessoais
               </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* CPF */}
                 <div className="relative">
                   <MaskedInput
                     mask="999.999.999-99"
